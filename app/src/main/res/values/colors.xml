@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#F6F4FF</color>
+    <color name="launcher_background">#6558D3</color>
+    <color name="alarm_background">#17142C</color>
+    <color name="white">#FFFFFF</color>
+</resources>

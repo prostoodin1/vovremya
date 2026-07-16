@@ -1,0 +1,219 @@
+package com.vovremya.alarm.notifications
+
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.os.Build
+import android.provider.Settings
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.vovremya.alarm.MainActivity
+import com.vovremya.alarm.R
+import com.vovremya.alarm.data.SyncResult
+import com.vovremya.alarm.domain.AlarmPayload
+import com.vovremya.alarm.ui.AlarmActivity
+import com.vovremya.alarm.update.UpdateInstallerActivity
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+class NotificationHelper(private val context: Context) {
+    private val manager = NotificationManagerCompat.from(context)
+
+    fun createChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val systemManager = context.getSystemService(NotificationManager::class.java)
+        val alarmSound = Settings.System.DEFAULT_ALARM_ALERT_URI
+        val audio = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val alarmChannels = listOf(
+            Triple(ALARM_CHANNEL_SOUND_VIBRATION, true, true),
+            Triple(ALARM_CHANNEL_SOUND, true, false),
+            Triple(ALARM_CHANNEL_VIBRATION, false, true),
+            Triple(ALARM_CHANNEL_SILENT, false, false),
+        ).map { (id, sound, vibration) ->
+            NotificationChannel(
+                id,
+                "${context.getString(R.string.alarm_channel)} · ${alarmModeName(sound, vibration)}",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Сигнал перед событием"
+                enableVibration(vibration)
+                vibrationPattern = if (vibration) longArrayOf(0, 600, 300, 600) else null
+                if (sound) setSound(alarmSound, audio) else setSound(null, null)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+        }
+        val planning = NotificationChannel(
+            PLANNING_CHANNEL,
+            context.getString(R.string.sync_channel),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply { description = "Итог ежедневной проверки календаря" }
+        val updates = NotificationChannel(
+            UPDATE_CHANNEL,
+            context.getString(R.string.update_channel),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply { description = "Новые версии из GitHub Releases" }
+        systemManager.createNotificationChannels(alarmChannels + listOf(planning, updates))
+    }
+
+    fun showAlarm(intent: Intent) {
+        if (!canNotify()) return
+        val key = intent.getStringExtra(AlarmPayload.EXTRA_KEY).orEmpty()
+        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank { "Пора собираться" }
+        val eventStart = intent.getLongExtra(AlarmPayload.EXTRA_EVENT_START, 0L)
+        val location = intent.getStringExtra(AlarmPayload.EXTRA_LOCATION)
+        val soundEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
+        val vibrationEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        val fullScreen = Intent(context, AlarmActivity::class.java).apply {
+            putExtras(intent)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            context,
+            key.hashCode() and Int.MAX_VALUE,
+            fullScreen,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val content = buildString {
+            append("Событие в ${formatTime(eventStart)}")
+            if (!location.isNullOrBlank()) append(" · $location")
+        }
+        val notification = NotificationCompat.Builder(
+            context,
+            alarmChannelId(soundEnabled, vibrationEnabled),
+        )
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
+            .build()
+        notifySafely(alarmNotificationId(key), notification)
+    }
+
+    fun cancelAlarm(key: String) = manager.cancel(alarmNotificationId(key))
+
+    fun showPlanningSummary(result: SyncResult) {
+        if (!canNotify()) return
+        val alarms = result.alarms
+        val next = alarms.firstOrNull()
+        val title = if (next == null) "На ближайшие дни будильников нет" else "Будильник готов"
+        val body = if (next == null) {
+            when {
+                result.diagnostics.totalInstances == 0 && result.diagnostics.unsyncedCalendars > 0 ->
+                    "События не прочитаны: проверьте синхронизацию календарей"
+                result.diagnostics.totalInstances == 0 ->
+                    "Календарь не вернул событий на ближайшие ${result.diagnostics.lookAheadDays} дней"
+                else -> "Календарь проверен — события не прошли выбранные фильтры"
+            }
+        } else {
+            "${formatDay(next.alarmAtMillis)}, ${formatTime(next.alarmAtMillis)} · ${next.title}"
+        }
+        val openApp = PendingIntent.getActivity(
+            context,
+            19,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        notifySafely(
+            PLANNING_NOTIFICATION_ID,
+            NotificationCompat.Builder(context, PLANNING_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setContentIntent(openApp)
+                .setAutoCancel(true)
+                .build(),
+        )
+    }
+
+    fun showUpdate(version: String, apk: File) {
+        if (!canNotify()) return
+        val install = PendingIntent.getActivity(
+            context,
+            UPDATE_NOTIFICATION_ID,
+            Intent(context, UpdateInstallerActivity::class.java).apply {
+                putExtra(UpdateInstallerActivity.EXTRA_APK_PATH, apk.absolutePath)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        notifySafely(
+            UPDATE_NOTIFICATION_ID,
+            NotificationCompat.Builder(context, UPDATE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("Вовремя $version готово")
+                .setContentText("Нажмите, чтобы подтвердить установку обновления")
+                .setContentIntent(install)
+                .setAutoCancel(true)
+                .build(),
+        )
+    }
+
+    private fun canNotify(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Permission can be revoked between [canNotify] and the framework call. Keeping
+     * that race local prevents a background sync or alarm receiver from crashing.
+     */
+    private fun notifySafely(id: Int, notification: android.app.Notification) {
+        if (!canNotify()) return
+        try {
+            manager.notify(id, notification)
+        } catch (_: SecurityException) {
+            // The next foreground launch will ask for notification permission again.
+        }
+    }
+
+    private fun alarmNotificationId(key: String): Int = (key.hashCode() and 0x00FFFFFF) + 1000
+
+    private fun alarmChannelId(sound: Boolean, vibration: Boolean): String = when {
+        sound && vibration -> ALARM_CHANNEL_SOUND_VIBRATION
+        sound -> ALARM_CHANNEL_SOUND
+        vibration -> ALARM_CHANNEL_VIBRATION
+        else -> ALARM_CHANNEL_SILENT
+    }
+
+    private fun alarmModeName(sound: Boolean, vibration: Boolean): String = when {
+        sound && vibration -> "звук и вибрация"
+        sound -> "только звук"
+        vibration -> "только вибрация"
+        else -> "без звука"
+    }
+
+    private fun formatTime(millis: Long): String = Instant.ofEpochMilli(millis)
+        .atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("HH:mm", Locale("ru")))
+
+    private fun formatDay(millis: Long): String = Instant.ofEpochMilli(millis)
+        .atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale("ru")))
+
+    companion object {
+        const val ALARM_CHANNEL_SOUND_VIBRATION = "event_alarms_sound_vibration_v2"
+        const val ALARM_CHANNEL_SOUND = "event_alarms_sound_v2"
+        const val ALARM_CHANNEL_VIBRATION = "event_alarms_vibration_v2"
+        const val ALARM_CHANNEL_SILENT = "event_alarms_silent_v2"
+        const val PLANNING_CHANNEL = "daily_planning"
+        const val UPDATE_CHANNEL = "github_updates"
+        private const val PLANNING_NOTIFICATION_ID = 1900
+        private const val UPDATE_NOTIFICATION_ID = 2300
+    }
+}

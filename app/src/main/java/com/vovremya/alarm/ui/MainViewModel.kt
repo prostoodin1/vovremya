@@ -1,0 +1,256 @@
+package com.vovremya.alarm.ui
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.vovremya.alarm.BuildConfig
+import com.vovremya.alarm.VovremyaApplication
+import com.vovremya.alarm.data.AppSettings
+import com.vovremya.alarm.data.CalendarInfo
+import com.vovremya.alarm.data.ScheduledAlarm
+import com.vovremya.alarm.data.SyncDiagnostics
+import com.vovremya.alarm.data.SyncResult
+import com.vovremya.alarm.update.UpdateCheckResult
+import java.time.DayOfWeek
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+data class MainUiState(
+    val settings: AppSettings = AppSettings(),
+    val alarms: List<ScheduledAlarm> = emptyList(),
+    val calendars: List<CalendarInfo> = emptyList(),
+    val lastSyncMillis: Long? = null,
+    val syncing: Boolean = false,
+    val message: String? = null,
+    val lastError: String? = null,
+    val diagnostics: SyncDiagnostics? = null,
+    val githubConfigured: Boolean = BuildConfig.GITHUB_REPOSITORY.isNotBlank(),
+)
+
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val container = (application as VovremyaApplication).container
+    private val calendars = MutableStateFlow<List<CalendarInfo>>(emptyList())
+    private val syncing = MutableStateFlow(false)
+    private val message = MutableStateFlow<String?>(null)
+    private val lastError = MutableStateFlow<String?>(null)
+    private val diagnostics = MutableStateFlow<SyncDiagnostics?>(null)
+    private var calendarObserverJob: Job? = null
+
+    val state = combine(
+        container.settingsStore.settings,
+        container.settingsStore.scheduledAlarms,
+        container.settingsStore.lastSyncMillis,
+        calendars,
+        syncing,
+    ) { settings, alarms, lastSync, availableCalendars, isSyncing ->
+        MainUiState(
+            settings = settings,
+            alarms = alarms.filter { it.alarmAtMillis > System.currentTimeMillis() },
+            calendars = availableCalendars,
+            lastSyncMillis = lastSync,
+            syncing = isSyncing,
+        )
+    }.combine(message) { state, currentMessage -> state.copy(message = currentMessage) }
+        .combine(lastError) { state, error -> state.copy(lastError = error) }
+        .combine(diagnostics) { state, currentDiagnostics -> state.copy(diagnostics = currentDiagnostics) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
+
+    fun onCalendarPermissionAvailable() {
+        if (calendarObserverJob?.isActive != true) {
+            calendarObserverJob = viewModelScope.launch {
+                runCatching {
+                    container.calendarRepository.calendarChanges().collectLatest {
+                        delay(750)
+                        syncNow(showMessage = false)
+                    }
+                }
+            }
+        }
+        syncNow(showMessage = false)
+    }
+
+    fun syncNow(showMessage: Boolean = true) {
+        runSync(
+            showMessage = showMessage,
+            requestRemoteSync = showMessage,
+            scheduleFollowUp = showMessage,
+        )
+    }
+
+    private fun runSync(
+        showMessage: Boolean,
+        requestRemoteSync: Boolean,
+        scheduleFollowUp: Boolean,
+    ) {
+        if (syncing.value) return
+        viewModelScope.launch {
+            syncing.value = true
+            var remoteSyncRequested = false
+            runCatching {
+                calendars.value = container.calendarRepository.getCalendars()
+                if (requestRemoteSync) {
+                    remoteSyncRequested = container.calendarRepository.requestCalendarSync(calendars.value) > 0
+                    if (remoteSyncRequested) delay(1_500)
+                }
+                container.alarmScheduler.syncFromCalendar()
+            }
+                .onSuccess { result ->
+                    diagnostics.value = result.diagnostics
+                    lastError.value = null
+                    if (showMessage) message.value = syncMessage(result)
+                }
+                .onFailure {
+                    lastError.value = "${it::class.java.simpleName}: ${it.message.orEmpty().take(180)}"
+                    if (showMessage) message.value = "Не удалось прочитать календарь"
+                }
+            syncing.value = false
+            if (scheduleFollowUp && remoteSyncRequested) {
+                delay(4_000)
+                runSync(showMessage = false, requestRemoteSync = false, scheduleFollowUp = false)
+            }
+        }
+    }
+
+    fun setLeadMinutes(minutes: Int) = updateAndSync {
+        container.settingsStore.setLeadMinutes(minutes)
+    }
+
+    fun setLatestEventMinutes(minutes: Int) = updateAndSync {
+        container.settingsStore.setLatestEventMinutes(minutes)
+    }
+
+    fun setLatestEventEnabled(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setLatestEventEnabled(enabled)
+    }
+
+    fun setDailySyncMinutes(minutes: Int) {
+        viewModelScope.launch {
+            container.settingsStore.setDailySyncMinutes(minutes)
+            container.dailySyncScheduler.scheduleNext(minutes)
+            syncNow(showMessage = false)
+        }
+    }
+
+    fun setLookAheadDays(days: Int) = updateAndSync {
+        container.settingsStore.setLookAheadDays(days)
+    }
+
+    fun setAllEventsPerDay(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setAllEventsPerDay(enabled)
+    }
+
+    fun setIncludeAllDayEvents(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setIncludeAllDayEvents(enabled)
+    }
+
+    fun setAllDayEventMinutes(minutes: Int) = updateAndSync {
+        container.settingsStore.setAllDayEventMinutes(minutes)
+    }
+
+    fun setAlarmSoundEnabled(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setAlarmSoundEnabled(enabled)
+    }
+
+    fun setAlarmVibrationEnabled(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setAlarmVibrationEnabled(enabled)
+    }
+
+    fun setAlarmSoundUri(uri: String?) = updateAndSync {
+        container.settingsStore.setAlarmSoundUri(uri)
+    }
+
+    fun setSnoozeMinutes(minutes: Int) = updateAndSync {
+        container.settingsStore.setSnoozeMinutes(minutes)
+    }
+
+    fun setAutoSilenceMinutes(minutes: Int) = updateAndSync {
+        container.settingsStore.setAutoSilenceMinutes(minutes)
+    }
+
+    fun toggleDay(day: DayOfWeek) = updateAndSync {
+        val current = state.value.settings.enabledDays
+        container.settingsStore.setEnabledDays(
+            if (day in current) current - day else current + day,
+        )
+    }
+
+    fun toggleCalendar(calendarId: Long) = updateAndSync {
+        val available = state.value.calendars
+        if (available.none { it.id == calendarId }) return@updateAndSync
+        val allIds = available.map(CalendarInfo::id).toSet()
+        val current = state.value.settings.selectedCalendarIds
+        val explicit = if (current.isEmpty()) allIds else current.intersect(allIds)
+        val changed = if (calendarId in explicit) explicit - calendarId else explicit + calendarId
+        if (changed.isEmpty()) {
+            message.value = "Оставьте хотя бы один календарь"
+            return@updateAndSync
+        }
+        container.settingsStore.setSelectedCalendarIds(if (changed == allIds) emptySet() else changed)
+    }
+
+    fun selectAllCalendars() = updateAndSync {
+        container.settingsStore.setSelectedCalendarIds(emptySet())
+    }
+
+    fun setAutomaticUpdates(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setAutomaticUpdates(enabled) }
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            message.value = when (val result = container.updateManager.checkAndDownloadUpdate()) {
+                UpdateCheckResult.NotConfigured -> "Сначала укажите GitHub-репозиторий в gradle.properties"
+                UpdateCheckResult.UpToDate -> "Установлена последняя версия"
+                UpdateCheckResult.NoApkAsset -> "В последнем релизе нет APK"
+                is UpdateCheckResult.Downloaded -> "Версия ${result.version} загружена"
+                is UpdateCheckResult.Failed -> "Обновление: ${result.reason}"
+            }
+        }
+    }
+
+    fun clearMessage() {
+        message.value = null
+    }
+
+    private fun updateAndSync(change: suspend () -> Unit) {
+        viewModelScope.launch {
+            change()
+            syncNow(showMessage = false)
+        }
+    }
+
+    private fun syncMessage(result: SyncResult): String {
+        val d = result.diagnostics
+        return when {
+            d.readErrors.isNotEmpty() ->
+                "Календарь прочитан с ошибками — откройте скрытый журнал"
+            result.alarms.isNotEmpty() && result.exact ->
+                "Найдено событий: ${d.usableTimedEvents}; будильников: ${result.alarms.size}"
+            result.alarms.isNotEmpty() ->
+                "Будильников: ${result.alarms.size}; разрешите точное время"
+            d.totalInstances == 0 && d.unsyncedCalendars > 0 ->
+                "Событий не найдено. У ${d.unsyncedCalendars} календарей выключена синхронизация"
+            d.totalInstances == 0 && d.hiddenCalendars > 0 ->
+                "Событий не найдено. ${d.hiddenCalendars} календарей скрыто в приложении календаря"
+            d.totalInstances == 0 ->
+                "В ближайшие ${d.lookAheadDays} дней календарь не вернул событий"
+            d.excludedAllDay == d.totalInstances ->
+                "Найдены только события на весь день — для них будильник не ставится"
+            d.excludedCalendar > 0 ->
+                "События найдены, но их календари отключены в настройках"
+            d.excludedDay > 0 ->
+                "События найдены, но эти дни недели отключены"
+            d.excludedCutoff > 0 ->
+                "События найдены, но начинаются позже заданной метки"
+            d.excludedPastAlarm > 0 ->
+                "События найдены, но время будильника для них уже прошло"
+            else -> "Подходящих событий пока нет"
+        }
+    }
+}
