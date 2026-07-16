@@ -52,8 +52,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            VovremyaTheme {
-                val state by viewModel.state.collectAsStateWithLifecycle()
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            VovremyaTheme(
+                themeMode = state.settings.themeMode,
+                accentTheme = state.settings.accentTheme,
+            ) {
                 var permissions by remember { mutableStateOf(readPermissions()) }
                 DisposableEffect(lifecycle) {
                     val observer = LifecycleEventObserver { _, event ->
@@ -114,6 +117,8 @@ class MainActivity : ComponentActivity() {
                     onToggleCalendar = viewModel::toggleCalendar,
                     onSelectAllCalendars = viewModel::selectAllCalendars,
                     onAutomaticUpdates = viewModel::setAutomaticUpdates,
+                    onThemeMode = viewModel::setThemeMode,
+                    onAccentTheme = viewModel::setAccentTheme,
                     onCheckUpdates = viewModel::checkForUpdates,
                     onMessageShown = viewModel::clearMessage,
                 )

@@ -18,6 +18,9 @@ class VovremyaApplication : Application() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             val settings = container.settingsStore.settings.first()
             container.dailySyncScheduler.scheduleNext(settings.dailySyncMinutes)
+            if (settings.automaticUpdates) {
+                container.updateManager.checkAndDownloadUpdate(force = false)
+            }
         }
     }
 }

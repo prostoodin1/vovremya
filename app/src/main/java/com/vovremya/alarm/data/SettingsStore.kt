@@ -35,6 +35,8 @@ class SettingsStore(private val context: Context) {
         val enabledDays = stringPreferencesKey("enabled_days")
         val calendarIds = stringPreferencesKey("calendar_ids")
         val automaticUpdates = booleanPreferencesKey("automatic_updates")
+        val themeMode = stringPreferencesKey("theme_mode")
+        val accentTheme = stringPreferencesKey("accent_theme")
         val scheduledAlarms = stringPreferencesKey("scheduled_alarms")
         val lastSyncMillis = longPreferencesKey("last_sync_millis")
     }
@@ -115,6 +117,14 @@ class SettingsStore(private val context: Context) {
         it[Keys.automaticUpdates] = enabled
     }
 
+    suspend fun setThemeMode(value: ThemeMode) = context.vovremyaDataStore.edit {
+        it[Keys.themeMode] = value.name
+    }
+
+    suspend fun setAccentTheme(value: AccentTheme) = context.vovremyaDataStore.edit {
+        it[Keys.accentTheme] = value.name
+    }
+
     suspend fun saveScheduledAlarms(alarms: List<ScheduledAlarm>) = context.vovremyaDataStore.edit {
         it[Keys.scheduledAlarms] = encodeAlarms(alarms)
         it[Keys.lastSyncMillis] = System.currentTimeMillis()
@@ -149,6 +159,12 @@ class SettingsStore(private val context: Context) {
             enabledDays = days,
             selectedCalendarIds = calendars,
             automaticUpdates = preferences[Keys.automaticUpdates] ?: true,
+            themeMode = preferences[Keys.themeMode]
+                ?.let { stored -> ThemeMode.entries.firstOrNull { it.name == stored } }
+                ?: ThemeMode.SYSTEM,
+            accentTheme = preferences[Keys.accentTheme]
+                ?.let { stored -> AccentTheme.entries.firstOrNull { it.name == stored } }
+                ?: AccentTheme.VIOLET,
         )
     }
 

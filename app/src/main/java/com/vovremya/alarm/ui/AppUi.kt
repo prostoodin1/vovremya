@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -88,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardOptions
@@ -98,11 +100,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vovremya.alarm.BuildConfig
 import com.vovremya.alarm.data.CalendarInfo
+import com.vovremya.alarm.data.AccentTheme
 import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
 import com.vovremya.alarm.data.EventSource
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SyncDiagnostics
+import com.vovremya.alarm.data.ThemeMode
+import com.vovremya.alarm.localization.appLocale
+import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.Mint
 import com.vovremya.alarm.ui.theme.Violet
 import java.time.DayOfWeek
@@ -112,7 +118,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
-import java.util.Locale
 import kotlinx.coroutines.launch
 
 data class PermissionState(
@@ -152,6 +157,8 @@ fun MainApp(
     onToggleCalendar: (Long) -> Unit,
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
+    onThemeMode: (ThemeMode) -> Unit,
+    onAccentTheme: (AccentTheme) -> Unit,
     onCheckUpdates: () -> Unit,
     onMessageShown: () -> Unit,
 ) {
@@ -216,6 +223,8 @@ fun MainApp(
                     onToggleCalendar = onToggleCalendar,
                     onSelectAllCalendars = onSelectAllCalendars,
                     onAutomaticUpdates = onAutomaticUpdates,
+                    onThemeMode = onThemeMode,
+                    onAccentTheme = onAccentTheme,
                     onCheckUpdates = onCheckUpdates,
                     onSync = onSync,
                     onRequestCalendar = onRequestCalendar,
@@ -258,9 +267,9 @@ private fun HomeScreen(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Ближайшие", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(tr("Ближайшие"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        if (state.settings.allEventsPerDay) "Все подходящие события" else "По одному событию на день",
+                        tr(if (state.settings.allEventsPerDay) "Все подходящие события" else "По одному событию на день"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -269,7 +278,7 @@ private fun HomeScreen(
                     if (state.syncing) {
                         CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(Icons.Rounded.Refresh, "Обновить")
+                        Icon(Icons.Rounded.Refresh, tr("Обновить"))
                     }
                 }
             }
@@ -281,7 +290,10 @@ private fun HomeScreen(
         }
         item {
             Text(
-                "Календарь проверяется каждый день в ${formatClockMinutes(state.settings.dailySyncMinutes)}. Приложение не работает постоянно в фоне.",
+                tr(
+                    "Календарь проверяется каждый день в %s. Приложение не работает постоянно в фоне.",
+                    formatClockMinutes(state.settings.dailySyncMinutes),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 8.dp),
@@ -294,14 +306,14 @@ private fun HomeScreen(
 private fun HomeHeader(onSettings: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Вовремя", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Text(tr("Вовремя"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
             Text(
-                LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)).replaceFirstChar { it.uppercase() },
+                LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", APP_LOCALE)).replaceFirstChar { it.uppercase() },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-            IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Настройки") }
+            IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Настройки")) }
         }
     }
 }
@@ -319,17 +331,17 @@ private fun PermissionCard(
         shape = RoundedCornerShape(26.dp),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Завершим настройку", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(tr("Завершим настройку"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Text(
-                "Android просит разрешения отдельно — данные календаря остаются только на телефоне.",
+                tr("Android просит разрешения отдельно — данные календаря остаются только на телефоне."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f),
             )
             Spacer(Modifier.height(4.dp))
-            PermissionRow("Доступ к календарю", permissions.calendar, onCalendar)
-            PermissionRow("Уведомления", permissions.notifications, onNotifications)
-            PermissionRow("Точное время сигнала", permissions.exactAlarms, onExact)
-            PermissionRow("Экран будильника", permissions.fullScreen, onFullScreen)
+            PermissionRow(tr("Доступ к календарю"), permissions.calendar, onCalendar)
+            PermissionRow(tr("Уведомления"), permissions.notifications, onNotifications)
+            PermissionRow(tr("Точное время сигнала"), permissions.exactAlarms, onExact)
+            PermissionRow(tr("Экран будильника"), permissions.fullScreen, onFullScreen)
         }
     }
 }
@@ -347,13 +359,15 @@ private fun PermissionRow(label: String, granted: Boolean, onClick: () -> Unit) 
         )
         Spacer(Modifier.width(10.dp))
         Text(label, Modifier.weight(1f), fontWeight = FontWeight.Medium)
-        Text(if (granted) "Готово" else "Разрешить", style = MaterialTheme.typography.labelMedium)
+        Text(tr(if (granted) "Готово" else "Разрешить"), style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable
 private fun NextAlarmCard(alarm: ScheduledAlarm?) {
-    val start = listOf(Color(0xFF6A5BE2), Color(0xFF41348F))
+    val primary = MaterialTheme.colorScheme.primary
+    val start = listOf(primary, lerp(primary, Color.Black, .38f))
+    val cardText = MaterialTheme.colorScheme.onPrimary
     Card(
         shape = RoundedCornerShape(30.dp),
         modifier = Modifier.fillMaxWidth().animateContentSize(tween(350)),
@@ -363,24 +377,24 @@ private fun NextAlarmCard(alarm: ScheduledAlarm?) {
                 Column(Modifier.padding(vertical = 18.dp)) {
                     Icon(Icons.Rounded.EventAvailable, null, tint = Color(0xFFD8D3FF), modifier = Modifier.size(36.dp))
                     Spacer(Modifier.height(18.dp))
-                    Text("Всё спокойно", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Следующий будильник появится после проверки календаря", color = Color(0xFFD8D3FF))
+                    Text(tr("Всё спокойно"), color = cardText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(tr("Следующий будильник появится после проверки календаря"), color = cardText.copy(alpha = .82f))
                 }
             } else {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Alarm, null, tint = Color(0xFFD8D3FF))
                         Spacer(Modifier.width(8.dp))
-                        Text("СЛЕДУЮЩИЙ БУДИЛЬНИК", color = Color(0xFFD8D3FF), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text(tr("СЛЕДУЮЩИЙ БУДИЛЬНИК"), color = cardText.copy(alpha = .82f), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     }
                     Spacer(Modifier.height(18.dp))
-                    Text(formatTime(alarm.alarmAtMillis), color = Color.White, fontSize = 58.sp, lineHeight = 62.sp, fontWeight = FontWeight.Light)
-                    Text(formatDayLong(alarm.alarmAtMillis), color = Color(0xFFE7E4FF), style = MaterialTheme.typography.titleMedium)
+                    Text(formatTime(alarm.alarmAtMillis), color = cardText, fontSize = 58.sp, lineHeight = 62.sp, fontWeight = FontWeight.Light)
+                    Text(formatDayLong(alarm.alarmAtMillis), color = cardText.copy(alpha = .9f), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(22.dp))
                     Surface(color = Color.White.copy(alpha = .13f), shape = RoundedCornerShape(18.dp)) {
                         Column(Modifier.padding(14.dp)) {
-                            Text(alarm.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text("Событие в ${formatTime(alarm.eventStartMillis)} · ${timeUntil(alarm.alarmAtMillis)}", color = Color(0xFFD8D3FF), style = MaterialTheme.typography.bodySmall)
+                            Text(alarm.title, color = cardText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(tr("Событие в %s · %s", formatTime(alarm.eventStartMillis), timeUntil(alarm.alarmAtMillis)), color = cardText.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -411,7 +425,7 @@ private fun AlarmRow(alarm: ScheduledAlarm) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(7.dp).background(Color(alarm.calendarColor), CircleShape))
                     Spacer(Modifier.width(6.dp))
-                    Text("${alarm.calendarName} · событие ${formatTime(alarm.eventStartMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(tr("%s · событие %s", alarm.calendarName, formatTime(alarm.eventStartMillis)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             if (!alarm.location.isNullOrBlank()) Icon(Icons.Rounded.LocationOn, null, tint = MaterialTheme.colorScheme.outline)
@@ -425,9 +439,9 @@ private fun EmptyAlarms(hasCalendarPermission: Boolean, diagnostics: SyncDiagnos
         Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.CalendarMonth, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
-            Text(if (hasCalendarPermission) "Подходящих событий нет" else "Нужен доступ к календарю", fontWeight = FontWeight.Bold)
+            Text(tr(if (hasCalendarPermission) "Подходящих событий нет" else "Нужен доступ к календарю"), fontWeight = FontWeight.Bold)
             Text(
-                if (hasCalendarPermission) diagnosticsText(diagnostics) else "Разрешите доступ в карточке выше",
+                if (hasCalendarPermission) diagnosticsText(diagnostics) else tr("Разрешите доступ в карточке выше"),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
@@ -458,6 +472,8 @@ private fun SettingsScreen(
     onToggleCalendar: (Long) -> Unit,
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
+    onThemeMode: (ThemeMode) -> Unit,
+    onAccentTheme: (AccentTheme) -> Unit,
     onCheckUpdates: () -> Unit,
     onSync: () -> Unit,
     onRequestCalendar: () -> Unit,
@@ -483,17 +499,60 @@ private fun SettingsScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "Назад") }
+                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, tr("Назад")) }
                 Spacer(Modifier.width(4.dp))
-                Text("Настройки", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(tr("Настройки"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             }
         }
         item {
-            SettingsCard(Icons.Rounded.Timer, "Время", "Точная настройка планирования") {
+            SettingsCard(Icons.Rounded.Palette, tr("Оформление"), tr("Цвет и режим интерфейса")) {
+                Text(tr("Режим"), fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = state.settings.themeMode == mode,
+                            onClick = { onThemeMode(mode) },
+                            label = {
+                                Text(
+                                    when (mode) {
+                                        ThemeMode.SYSTEM -> tr("Как на телефоне")
+                                        ThemeMode.LIGHT -> tr("Светлый")
+                                        ThemeMode.DARK -> tr("Тёмный")
+                                    },
+                                )
+                            },
+                        )
+                    }
+                }
+                Text(tr("Основной цвет"), fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AccentTheme.entries.forEach { accent ->
+                        FilterChip(
+                            selected = state.settings.accentTheme == accent,
+                            onClick = { onAccentTheme(accent) },
+                            label = {
+                                Text(
+                                    when (accent) {
+                                        AccentTheme.VIOLET -> tr("Фиолетовый")
+                                        AccentTheme.BLUE -> tr("Синий")
+                                        AccentTheme.GREEN -> tr("Зелёный")
+                                        AccentTheme.ORANGE -> tr("Оранжевый")
+                                        AccentTheme.ROSE -> tr("Розовый")
+                                        AccentTheme.TEAL -> tr("Бирюзовый")
+                                    },
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            SettingsCard(Icons.Rounded.Timer, tr("Время"), tr("Точная настройка планирования")) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(formatLead(state.settings.leadMinutes), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (state.settings.leadMinutes == 0) "без опережения" else "до начала", modifier = Modifier.padding(bottom = 5.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr(if (state.settings.leadMinutes == 0) "без опережения" else "до начала"), modifier = Modifier.padding(bottom = 5.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0, 30, 60, 90, 120, 180, 24 * 60).forEach { minutes ->
@@ -505,18 +564,18 @@ private fun SettingsScreen(
                     }
                 }
                 OutlinedButton(onClick = { showLeadDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Задать дни, часы и минуты")
+                    Text(tr("Задать дни, часы и минуты"))
                 }
                 HorizontalDivider()
                 ToggleRow(
-                    title = "Ограничить поздние события",
-                    subtitle = if (state.settings.latestEventEnabled) "Не позже ${formatClockMinutes(state.settings.latestEventMinutes)}" else "Ограничение выключено",
+                    title = tr("Ограничить поздние события"),
+                    subtitle = if (state.settings.latestEventEnabled) tr("Не позже %s", formatClockMinutes(state.settings.latestEventMinutes)) else tr("Ограничение выключено"),
                     checked = state.settings.latestEventEnabled,
                     onChecked = onLatestEventEnabled,
                 )
                 AnimatedVisibility(state.settings.latestEventEnabled) {
                     SettingsActionRow(
-                        title = "Последнее допустимое время",
+                        title = tr("Последнее допустимое время"),
                         subtitle = formatClockMinutes(state.settings.latestEventMinutes),
                         onClick = {
                             val hour = state.settings.latestEventMinutes / 60
@@ -526,35 +585,35 @@ private fun SettingsScreen(
                     )
                 }
                 HorizontalDivider()
-                Text("Проверять события вперёд", fontWeight = FontWeight.Medium)
+                Text(tr("Проверять события вперёд"), fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(7, 14, 21, 30, 60, 90).forEach { days ->
                         FilterChip(
                             selected = state.settings.lookAheadDays == days,
                             onClick = { onLookAheadDays(days) },
-                            label = { Text("$days дн.") },
+                            label = { Text(tr("%d дн", days)) },
                         )
                     }
                 }
             }
         }
         item {
-            SettingsCard(Icons.Rounded.NotificationsActive, "Будильники", "События, звук и повтор сигнала") {
+            SettingsCard(Icons.Rounded.NotificationsActive, tr("Будильники"), tr("События, звук и повтор сигнала")) {
                 ToggleRow(
-                    title = "Все события за день",
-                    subtitle = if (state.settings.allEventsPerDay) "Будильник для каждого подходящего события" else "Только самое раннее событие дня",
+                    title = tr("Все события за день"),
+                    subtitle = tr(if (state.settings.allEventsPerDay) "Будильник для каждого подходящего события" else "Только самое раннее событие дня"),
                     checked = state.settings.allEventsPerDay,
                     onChecked = onAllEventsPerDay,
                 )
                 ToggleRow(
-                    title = "События на весь день",
-                    subtitle = "Использовать для них выбранное условное время",
+                    title = tr("События на весь день"),
+                    subtitle = tr("Использовать для них выбранное условное время"),
                     checked = state.settings.includeAllDayEvents,
                     onChecked = onIncludeAllDayEvents,
                 )
                 AnimatedVisibility(state.settings.includeAllDayEvents) {
                     SettingsActionRow(
-                        title = "Условное время события",
+                        title = tr("Условное время события"),
                         subtitle = formatClockMinutes(state.settings.allDayEventMinutes),
                         onClick = {
                             TimePickerDialog(
@@ -569,77 +628,77 @@ private fun SettingsScreen(
                 }
                 HorizontalDivider()
                 ToggleRow(
-                    title = "Звук",
-                    subtitle = "Проигрывать выбранную мелодию",
+                    title = tr("Звук"),
+                    subtitle = tr("Проигрывать выбранную мелодию"),
                     checked = state.settings.alarmSoundEnabled,
                     onChecked = onAlarmSoundEnabled,
                 )
                 AnimatedVisibility(state.settings.alarmSoundEnabled) {
                     SettingsActionRow(
-                        title = "Мелодия будильника",
-                        subtitle = if (state.settings.alarmSoundUri.isBlank()) "Системная по умолчанию" else "Выбрана пользователем",
+                        title = tr("Мелодия будильника"),
+                        subtitle = tr(if (state.settings.alarmSoundUri.isBlank()) "Системная по умолчанию" else "Выбрана пользователем"),
                         onClick = onPickAlarmSound,
                     )
                 }
                 ToggleRow(
-                    title = "Вибрация",
-                    subtitle = "Повторяющийся вибросигнал",
+                    title = tr("Вибрация"),
+                    subtitle = tr("Повторяющийся вибросигнал"),
                     checked = state.settings.alarmVibrationEnabled,
                     onChecked = onAlarmVibrationEnabled,
                 )
                 HorizontalDivider()
-                Text("Отложить сигнал", fontWeight = FontWeight.Medium)
+                Text(tr("Отложить сигнал"), fontWeight = FontWeight.Medium)
                 MinuteChoiceChips(state.settings.snoozeMinutes, listOf(5, 10, 15, 30, 60), onSnoozeMinutes)
-                Text("Автоматически выключить звук", fontWeight = FontWeight.Medium)
+                Text(tr("Автоматически выключить звук"), fontWeight = FontWeight.Medium)
                 MinuteChoiceChips(state.settings.autoSilenceMinutes, listOf(1, 5, 10, 15, 30), onAutoSilenceMinutes)
             }
         }
         item {
-            SettingsCard(Icons.Rounded.CalendarMonth, "Дни недели", "В какие дни создавать будильник") {
+            SettingsCard(Icons.Rounded.CalendarMonth, tr("Дни недели"), tr("В какие дни создавать будильник")) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     DayOfWeek.entries.forEach { day ->
                         FilterChip(
                             selected = day in state.settings.enabledDays,
                             onClick = { onToggleDay(day) },
-                            label = { Text(day.getDisplayName(TextStyle.SHORT, RU).replaceFirstChar { it.uppercase() }) },
+                            label = { Text(day.getDisplayName(TextStyle.SHORT, APP_LOCALE).replaceFirstChar { it.uppercase() }) },
                         )
                     }
                 }
                 if (state.settings.enabledDays.isEmpty()) {
-                    Text("Ни один день не выбран — будильники не создаются", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(tr("Ни один день не выбран — будильники не создаются"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         item {
-            SettingsCard(Icons.Rounded.EventAvailable, "Календари", "Источники событий на этом телефоне") {
+            SettingsCard(Icons.Rounded.EventAvailable, tr("Календари"), tr("Источники событий на этом телефоне")) {
                 if (!permissions.calendar) {
-                    FilledTonalButton(onClick = onRequestCalendar, modifier = Modifier.fillMaxWidth()) { Text("Разрешить доступ к календарю") }
+                    FilledTonalButton(onClick = onRequestCalendar, modifier = Modifier.fillMaxWidth()) { Text(tr("Разрешить доступ к календарю")) }
                 } else if (state.calendars.isEmpty()) {
-                    Text("На устройстве не найдено видимых календарей", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("На устройстве не найдено календарей"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     if (state.calendars.any(CalendarInfo::isShared)) {
                         Text(
-                            "Найдено общих календарей: ${state.calendars.count(CalendarInfo::isShared)}",
+                            tr("Найдено общих календарей: %d", state.calendars.count(CalendarInfo::isShared)),
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                     if (state.calendars.any { !it.syncEvents }) {
                         Text(
-                            "У календарей без синхронизации Android может не хранить события. Включите их синхронизацию в Google Calendar; уже загруженные записи приложение проверит напрямую.",
+                            tr("У календарей без синхронизации Android может не хранить события. Включите их синхронизацию в Google Calendar; уже загруженные записи приложение проверит напрямую."),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                     if (state.calendars.any { !it.visible }) {
                         Text(
-                            "Скрытые календари тоже проверяются напрямую, но повторяющиеся события надёжнее читать после включения показа календаря.",
+                            tr("Скрытые календари тоже проверяются напрямую, но повторяющиеся события надёжнее читать после включения показа календаря."),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                     FilledTonalButton(onClick = onSelectAllCalendars, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (state.settings.selectedCalendarIds.isEmpty()) "Все календари уже выбраны" else "Выбрать все календари")
+                        Text(tr(if (state.settings.selectedCalendarIds.isEmpty()) "Все календари уже выбраны" else "Выбрать все календари"))
                     }
                     state.calendars.forEachIndexed { index, calendar ->
                         CalendarToggle(
@@ -656,11 +715,11 @@ private fun SettingsScreen(
         item {
             SettingsCard(
                 Icons.Rounded.NotificationsActive,
-                "Планирование",
-                "Ежедневно в ${formatClockMinutes(state.settings.dailySyncMinutes)}",
+                tr("Планирование"),
+                tr("Ежедневно в %s", formatClockMinutes(state.settings.dailySyncMinutes)),
             ) {
                 SettingsActionRow(
-                    title = "Время проверки календарей",
+                    title = tr("Время проверки календарей"),
                     subtitle = formatClockMinutes(state.settings.dailySyncMinutes),
                     onClick = {
                         TimePickerDialog(
@@ -673,18 +732,18 @@ private fun SettingsScreen(
                     },
                 )
                 SettingsActionRow(
-                    title = if (permissions.exactAlarms) "Точное планирование включено" else "Разрешить точное время",
-                    subtitle = state.lastSyncMillis?.let { "Последняя проверка ${formatLastSync(it)}" } ?: "Ещё не проверялось",
+                    title = tr(if (permissions.exactAlarms) "Точное планирование включено" else "Разрешить точное время"),
+                    subtitle = state.lastSyncMillis?.let { tr("Последняя проверка %s", formatLastSync(it)) } ?: tr("Ещё не проверялось"),
                     onClick = if (permissions.exactAlarms) onSync else onRequestExactAlarms,
                 )
                 HorizontalDivider()
                 SettingsActionRow(
-                    title = "Ошибки и журнал",
+                    title = tr("Ошибки и журнал"),
                     subtitle = when {
                         state.lastError != null -> "Есть ошибка · нажмите, чтобы раскрыть"
                         state.diagnostics?.readErrors?.isNotEmpty() == true -> "Есть ошибки чтения · нажмите, чтобы раскрыть"
-                        diagnosticsExpanded -> "Нажмите, чтобы скрыть"
-                        else -> "Скрыто · нажмите, чтобы раскрыть"
+                        diagnosticsExpanded -> tr("Нажмите, чтобы скрыть")
+                        else -> tr("Скрыто · нажмите, чтобы раскрыть")
                     },
                     onClick = { diagnosticsExpanded = !diagnosticsExpanded },
                 )
@@ -729,22 +788,22 @@ private fun SettingsScreen(
                     if (state.syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.Refresh, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Проверить сейчас")
+                    Text(tr("Проверить сейчас"))
                 }
             }
         }
         item {
-            SettingsCard(Icons.Rounded.SystemUpdate, "Обновления", "Через GitHub Releases") {
+            SettingsCard(Icons.Rounded.SystemUpdate, tr("Обновления"), tr("Через GitHub Releases")) {
                 ToggleRow(
-                    title = "Проверять автоматически",
-                    subtitle = "APK загрузится сам; установку подтверждает Android",
+                    title = tr("Проверять автоматически"),
+                    subtitle = tr("APK загрузится сам; установку подтверждает Android"),
                     checked = state.settings.automaticUpdates,
                     onChecked = onAutomaticUpdates,
                 )
                 FilledTonalButton(onClick = onCheckUpdates, enabled = state.githubConfigured, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.SystemUpdate, null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (state.githubConfigured) "Проверить обновления" else "Репозиторий не настроен")
+                    Text(tr(if (state.githubConfigured) "Проверить обновления" else "Репозиторий не настроен"))
                 }
             }
         }
@@ -754,15 +813,15 @@ private fun SettingsScreen(
                     Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text("Экономно для батареи", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text("Одна плановая проверка в сутки и только нужные системные сигналы — без постоянного сервиса.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = .8f))
+                        Text(tr("Экономно для батареи"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(tr("Одна плановая проверка в сутки и только нужные системные сигналы — без постоянного сервиса."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = .8f))
                     }
                 }
             }
         }
         item {
             Text(
-                "Версия ${BuildConfig.VERSION_NAME}",
+                tr("Версия %s", BuildConfig.VERSION_NAME),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -783,20 +842,20 @@ private fun LeadTimeDialog(initialMinutes: Int, onDismiss: () -> Unit, onConfirm
         (minutes.toIntOrNull() ?: 0).coerceIn(0, 59)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Опережение будильника") },
+        title = { Text(tr("Опережение будильника")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Можно выбрать от момента начала до 14 суток заранее.", style = MaterialTheme.typography.bodySmall)
+                Text(tr("Можно выбрать от момента начала до 14 суток заранее."), style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DurationField(days, { days = it.filter(Char::isDigit).take(2) }, "Дни", Modifier.weight(1f))
-                    DurationField(hours, { hours = it.filter(Char::isDigit).take(2) }, "Часы", Modifier.weight(1f))
-                    DurationField(minutes, { minutes = it.filter(Char::isDigit).take(2) }, "Мин", Modifier.weight(1f))
+                    DurationField(days, { days = it.filter(Char::isDigit).take(2) }, tr("Дни"), Modifier.weight(1f))
+                    DurationField(hours, { hours = it.filter(Char::isDigit).take(2) }, tr("Часы"), Modifier.weight(1f))
+                    DurationField(minutes, { minutes = it.filter(Char::isDigit).take(2) }, tr("Мин"), Modifier.weight(1f))
                 }
-                Text("Итого: ${formatLead(total)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                Text(tr("Итого: %s", formatLead(total)), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(total) }) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        confirmButton = { TextButton(onClick = { onConfirm(total) }) { Text(tr("Сохранить")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Отмена")) } },
     )
 }
 
@@ -824,7 +883,7 @@ private fun MinuteChoiceChips(current: Int, choices: List<Int>, onChange: (Int) 
             FilterChip(
                 selected = current == minutes,
                 onClick = { onChange(minutes) },
-                label = { Text("$minutes мин") },
+                label = { Text(tr("%d мин", minutes)) },
             )
         }
     }
@@ -858,9 +917,9 @@ private fun CalendarToggle(calendar: CalendarInfo, checked: Boolean, enabled: Bo
             Text(calendar.displayName, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 when {
-                    !calendar.syncEvents -> "${if (calendar.isShared) "Общий · " else ""}${calendar.accountName} · синхронизация выключена"
-                    !calendar.visible -> "${if (calendar.isShared) "Общий · " else ""}${calendar.accountName} · календарь скрыт"
-                    calendar.isShared -> "Общий · владелец ${calendar.ownerAccount}"
+                    !calendar.syncEvents -> "${if (calendar.isShared) "${tr("Общий")} · " else ""}${calendar.accountName} · ${tr("синхронизация выключена")}"
+                    !calendar.visible -> "${if (calendar.isShared) "${tr("Общий")} · " else ""}${calendar.accountName} · ${tr("календарь скрыт")}"
+                    calendar.isShared -> "${tr("Общий")} · ${tr("владелец %s", calendar.ownerAccount)}"
                     else -> calendar.accountName
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -919,30 +978,30 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onCheck
 }
 
 private fun formatLead(minutes: Int): String {
-    if (minutes == 0) return "В момент начала"
+    if (minutes == 0) return tr("В момент начала")
     val days = minutes / (24 * 60)
     val hours = (minutes / 60) % 24
     val restMinutes = minutes % 60
     return buildList {
-        if (days > 0) add("$days дн")
-        if (hours > 0) add("$hours ч")
-        if (restMinutes > 0) add("$restMinutes мин")
+        if (days > 0) add(tr("%d дн", days))
+        if (hours > 0) add(tr("%d ч", hours))
+        if (restMinutes > 0) add(tr("%d мин", restMinutes))
     }.joinToString(" ")
 }
 
 private fun diagnosticsText(diagnostics: SyncDiagnostics?): String = when {
-    diagnostics == null -> "Нажмите обновить, чтобы проверить события"
+    diagnostics == null -> tr("Нажмите обновить, чтобы проверить события")
     diagnostics.totalInstances == 0 && diagnostics.unsyncedCalendars > 0 ->
-        "Android не вернул событий. Проверьте календари с выключенной синхронизацией в настройках"
+        tr("Android не вернул событий. Проверьте календари с выключенной синхронизацией в настройках")
     diagnostics.totalInstances == 0 && diagnostics.hiddenCalendars > 0 ->
-        "Android не вернул событий. Проверьте скрытые календари в настройках"
-    diagnostics.totalInstances == 0 -> "Android не вернул событий на ближайшие ${diagnostics.lookAheadDays} дней"
-    diagnostics.excludedAllDay == diagnostics.totalInstances -> "Найдены только события на весь день"
-    diagnostics.excludedCalendar > 0 -> "События есть, но их календари отключены в настройках"
-    diagnostics.excludedDay > 0 -> "События есть, но нужные дни недели отключены"
-    diagnostics.excludedCutoff > 0 -> "События начинаются позже заданной метки"
-    diagnostics.excludedPastAlarm > 0 -> "Время этих будильников уже прошло"
-    else -> "Проверьте фильтры календарей, дней и времени в настройках"
+        tr("Android не вернул событий. Проверьте скрытые календари в настройках")
+    diagnostics.totalInstances == 0 -> tr("Android не вернул событий на ближайшие %d дней", diagnostics.lookAheadDays)
+    diagnostics.excludedAllDay == diagnostics.totalInstances -> tr("Найдены только события на весь день")
+    diagnostics.excludedCalendar > 0 -> tr("События есть, но их календари отключены в настройках")
+    diagnostics.excludedDay > 0 -> tr("События есть, но нужные дни недели отключены")
+    diagnostics.excludedCutoff > 0 -> tr("События начинаются позже заданной метки")
+    diagnostics.excludedPastAlarm > 0 -> tr("Время этих будильников уже прошло")
+    else -> tr("Проверьте фильтры календарей, дней и времени в настройках")
 }
 
 private fun scanSummary(diagnostics: SyncDiagnostics): String = buildString {
@@ -957,17 +1016,17 @@ private fun scanSummary(diagnostics: SyncDiagnostics): String = buildString {
 
 private fun diagnosticDecision(event: EventDiagnostic): String {
     val decision = when (event.decision) {
-        EventDecision.ALARM_CREATED -> "Будильник создан"
-        EventDecision.ALL_DAY -> "Пропущено: событие на весь день"
-        EventDecision.CANCELED -> "Пропущено: событие отменено"
-        EventDecision.DECLINED -> "Пропущено: приглашение отклонено"
-        EventDecision.CALENDAR_DISABLED -> "Пропущено: календарь отключён в настройках"
-        EventDecision.DAY_DISABLED -> "Пропущено: день недели отключён"
-        EventDecision.AFTER_CUTOFF -> "Пропущено: позже временной метки"
-        EventDecision.ALARM_PASSED -> "Пропущено: время будильника уже прошло"
-        EventDecision.EXTRA_SAME_DAY -> "Пропущено: на этот день уже выбран более ранний будильник"
+        EventDecision.ALARM_CREATED -> tr("Будильник создан")
+        EventDecision.ALL_DAY -> tr("Пропущено: событие на весь день")
+        EventDecision.CANCELED -> tr("Пропущено: событие отменено")
+        EventDecision.DECLINED -> tr("Пропущено: приглашение отклонено")
+        EventDecision.CALENDAR_DISABLED -> tr("Пропущено: календарь отключён в настройках")
+        EventDecision.DAY_DISABLED -> tr("Пропущено: день недели отключён")
+        EventDecision.AFTER_CUTOFF -> tr("Пропущено: позже временной метки")
+        EventDecision.ALARM_PASSED -> tr("Пропущено: время будильника уже прошло")
+        EventDecision.EXTRA_SAME_DAY -> tr("Пропущено: на этот день уже выбран более ранний будильник")
     }
-    return if (event.source == EventSource.EVENTS) "$decision · найдено резервным запросом" else decision
+    return if (event.source == EventSource.EVENTS) "$decision · ${tr("найдено резервным запросом")}" else decision
 }
 
 private fun formatClockMinutes(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
@@ -979,8 +1038,8 @@ private fun formatDayLong(millis: Long): String = Instant.ofEpochMilli(millis).a
 
 private fun formatDayShort(millis: Long): String = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).let { dateTime ->
     when (dateTime.toLocalDate()) {
-        LocalDate.now() -> "Сегодня"
-        LocalDate.now().plusDays(1) -> "Завтра"
+        LocalDate.now() -> tr("Сегодня")
+        LocalDate.now().plusDays(1) -> tr("Завтра")
         else -> dateTime.format(DAY_SHORT_FORMAT).replaceFirstChar { it.uppercase() }
     }
 }
@@ -991,14 +1050,14 @@ private fun timeUntil(millis: Long): String {
     val duration = Duration.between(Instant.now(), Instant.ofEpochMilli(millis))
     val hours = duration.toHours().coerceAtLeast(0)
     return when {
-        hours >= 24 -> "через ${hours / 24} дн."
-        hours > 0 -> "через $hours ч"
-        else -> "скоро"
+        hours >= 24 -> tr("через %d дн.", hours / 24)
+        hours > 0 -> tr("через %d ч", hours)
+        else -> tr("скоро")
     }
 }
 
-private val RU = Locale("ru", "RU")
-private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", RU)
-private val DAY_LONG_FORMAT = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
-private val DAY_SHORT_FORMAT = DateTimeFormatter.ofPattern("EEE, d MMM", RU)
-private val LAST_SYNC_FORMAT = DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
+private val APP_LOCALE = appLocale()
+private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", APP_LOCALE)
+private val DAY_LONG_FORMAT = DateTimeFormatter.ofPattern("EEEE, d MMMM", APP_LOCALE)
+private val DAY_SHORT_FORMAT = DateTimeFormatter.ofPattern("EEE, d MMM", APP_LOCALE)
+private val LAST_SYNC_FORMAT = DateTimeFormatter.ofPattern("d MMM, HH:mm", APP_LOCALE)

@@ -45,18 +45,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vovremya.alarm.VovremyaApplication
+import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.domain.AlarmPayload
+import com.vovremya.alarm.localization.appLocale
+import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.VovremyaTheme
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 class AlarmActivity : ComponentActivity() {
     private var ringtone: Ringtone? = null
@@ -78,7 +82,7 @@ class AlarmActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val key = intent.getStringExtra(AlarmPayload.EXTRA_KEY).orEmpty()
-        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank { "Пора собираться" }
+        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank { tr("Пора собираться") }
         val eventStart = intent.getLongExtra(AlarmPayload.EXTRA_EVENT_START, 0L)
         val location = intent.getStringExtra(AlarmPayload.EXTRA_LOCATION)
         val allDay = intent.getBooleanExtra(AlarmPayload.EXTRA_ALL_DAY, false)
@@ -89,7 +93,9 @@ class AlarmActivity : ComponentActivity() {
         val autoSilenceMinutes = intent.getIntExtra(AlarmPayload.EXTRA_AUTO_SILENCE_MINUTES, 10).coerceIn(1, 60)
         startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes)
         setContent {
-            VovremyaTheme(darkTheme = true) {
+            val settings by (application as VovremyaApplication).container.settingsStore.settings
+                .collectAsStateWithLifecycle(initialValue = AppSettings())
+            VovremyaTheme(accentTheme = settings.accentTheme, darkTheme = true) {
                 AlarmScreen(
                     title = title,
                     eventStartMillis = eventStart,
@@ -205,6 +211,7 @@ private fun AlarmScreen(
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
+    val primary = MaterialTheme.colorScheme.primary
     val transition = rememberInfiniteTransition(label = "alarmPulse")
     val scale by transition.animateFloat(
         initialValue = 0.94f,
@@ -217,7 +224,7 @@ private fun AlarmScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF292153), Color(0xFF151322), Color(0xFF101018)),
+                    listOf(lerp(primary, Color.Black, .62f), Color(0xFF151322), Color(0xFF101018)),
                 ),
             )
             .padding(28.dp),
@@ -231,21 +238,21 @@ private fun AlarmScreen(
                 modifier = Modifier
                     .size(126.dp)
                     .scale(scale)
-                    .background(Color(0x336F61E8), CircleShape),
+                    .background(primary.copy(alpha = .2f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
-                    modifier = Modifier.size(90.dp).background(Color(0xFF6F61E8), CircleShape),
+                    modifier = Modifier.size(90.dp).background(primary, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Rounded.Alarm, null, tint = Color.White, modifier = Modifier.size(44.dp))
                 }
             }
             Spacer(Modifier.height(40.dp))
-            Text("ПОРА СОБИРАТЬСЯ", color = Color(0xFFAAA1FF), fontWeight = FontWeight.SemiBold)
+            Text(tr("ПОРА СОБИРАТЬСЯ"), color = primary, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))
             Text(
-                if (allDay) "Весь день" else formatEventTime(eventStartMillis),
+                if (allDay) tr("Весь день") else formatEventTime(eventStartMillis),
                 color = Color.White,
                 fontSize = if (allDay) 42.sp else 64.sp,
                 lineHeight = 68.sp,
@@ -269,17 +276,17 @@ private fun AlarmScreen(
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF241C52)),
-            ) { Text("Я встал", fontWeight = FontWeight.Bold) }
+            ) { Text(tr("Я встал"), fontWeight = FontWeight.Bold) }
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
                 onClick = onSnooze,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 shape = RoundedCornerShape(20.dp),
-            ) { Text("Отложить на $snoozeMinutes мин", color = Color.White) }
+            ) { Text(tr("Отложить на %d мин", snoozeMinutes), color = Color.White) }
         }
     }
 }
 
 private fun formatEventTime(millis: Long): String = Instant.ofEpochMilli(millis)
     .atZone(ZoneId.systemDefault())
-    .format(DateTimeFormatter.ofPattern("HH:mm", Locale("ru")))
+    .format(DateTimeFormatter.ofPattern("HH:mm", appLocale()))

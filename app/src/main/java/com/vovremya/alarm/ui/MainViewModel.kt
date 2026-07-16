@@ -6,10 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.vovremya.alarm.BuildConfig
 import com.vovremya.alarm.VovremyaApplication
 import com.vovremya.alarm.data.AppSettings
+import com.vovremya.alarm.data.AccentTheme
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.SyncResult
+import com.vovremya.alarm.data.ThemeMode
+import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.update.UpdateCheckResult
 import java.time.DayOfWeek
 import kotlinx.coroutines.Job
@@ -107,7 +110,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure {
                     lastError.value = "${it::class.java.simpleName}: ${it.message.orEmpty().take(180)}"
-                    if (showMessage) message.value = "Не удалось прочитать календарь"
+                    if (showMessage) message.value = tr("Не удалось прочитать календарь")
                 }
             syncing.value = false
             if (scheduleFollowUp && remoteSyncRequested) {
@@ -188,7 +191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val explicit = if (current.isEmpty()) allIds else current.intersect(allIds)
         val changed = if (calendarId in explicit) explicit - calendarId else explicit + calendarId
         if (changed.isEmpty()) {
-            message.value = "Оставьте хотя бы один календарь"
+            message.value = tr("Оставьте хотя бы один календарь")
             return@updateAndSync
         }
         container.settingsStore.setSelectedCalendarIds(if (changed == allIds) emptySet() else changed)
@@ -202,14 +205,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { container.settingsStore.setAutomaticUpdates(enabled) }
     }
 
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { container.settingsStore.setThemeMode(mode) }
+    }
+
+    fun setAccentTheme(theme: AccentTheme) {
+        viewModelScope.launch { container.settingsStore.setAccentTheme(theme) }
+    }
+
     fun checkForUpdates() {
         viewModelScope.launch {
             message.value = when (val result = container.updateManager.checkAndDownloadUpdate()) {
                 UpdateCheckResult.NotConfigured -> "Сначала укажите GitHub-репозиторий в gradle.properties"
-                UpdateCheckResult.UpToDate -> "Установлена последняя версия"
-                UpdateCheckResult.NoApkAsset -> "В последнем релизе нет APK"
-                is UpdateCheckResult.Downloaded -> "Версия ${result.version} загружена"
-                is UpdateCheckResult.Failed -> "Обновление: ${result.reason}"
+                UpdateCheckResult.UpToDate -> tr("Установлена последняя версия")
+                UpdateCheckResult.NoApkAsset -> tr("В последнем релизе нет APK")
+                UpdateCheckResult.NotDue -> tr("Установлена последняя версия")
+                is UpdateCheckResult.Downloaded -> tr("Версия %s загружена", result.version)
+                is UpdateCheckResult.Failed -> tr("Обновление: %s", result.reason)
             }
         }
     }
@@ -228,29 +240,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun syncMessage(result: SyncResult): String {
         val d = result.diagnostics
         return when {
-            d.readErrors.isNotEmpty() ->
-                "Календарь прочитан с ошибками — откройте скрытый журнал"
+            d.readErrors.isNotEmpty() && result.alarms.isEmpty() ->
+                tr("Календарь прочитан с ошибками — откройте скрытый журнал")
             result.alarms.isNotEmpty() && result.exact ->
-                "Найдено событий: ${d.usableTimedEvents}; будильников: ${result.alarms.size}"
+                tr("Найдено событий: %d; будильников: %d", d.usableTimedEvents, result.alarms.size)
             result.alarms.isNotEmpty() ->
-                "Будильников: ${result.alarms.size}; разрешите точное время"
+                tr("Будильников: %d; разрешите точное время", result.alarms.size)
             d.totalInstances == 0 && d.unsyncedCalendars > 0 ->
-                "Событий не найдено. У ${d.unsyncedCalendars} календарей выключена синхронизация"
+                tr("Событий не найдено. У %d календарей выключена синхронизация", d.unsyncedCalendars)
             d.totalInstances == 0 && d.hiddenCalendars > 0 ->
                 "Событий не найдено. ${d.hiddenCalendars} календарей скрыто в приложении календаря"
             d.totalInstances == 0 ->
-                "В ближайшие ${d.lookAheadDays} дней календарь не вернул событий"
+                tr("В ближайшие %d дней календарь не вернул событий", d.lookAheadDays)
             d.excludedAllDay == d.totalInstances ->
-                "Найдены только события на весь день — для них будильник не ставится"
+                tr("Найдены только события на весь день — для них будильник не ставится")
             d.excludedCalendar > 0 ->
-                "События найдены, но их календари отключены в настройках"
+                tr("События найдены, но их календари отключены в настройках")
             d.excludedDay > 0 ->
-                "События найдены, но эти дни недели отключены"
+                tr("События найдены, но эти дни недели отключены")
             d.excludedCutoff > 0 ->
-                "События найдены, но начинаются позже заданной метки"
+                tr("События найдены, но начинаются позже заданной метки")
             d.excludedPastAlarm > 0 ->
-                "События найдены, но время будильника для них уже прошло"
-            else -> "Подходящих событий пока нет"
+                tr("События найдены, но время будильника для них уже прошло")
+            else -> tr("Подходящих событий пока нет")
         }
     }
 }

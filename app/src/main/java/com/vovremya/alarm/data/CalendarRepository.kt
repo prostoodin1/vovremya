@@ -2,14 +2,16 @@ package com.vovremya.alarm.data
 
 import android.Manifest
 import android.accounts.Account
-import android.content.ContentUris
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.ContentObserver
+import android.net.Uri
 import android.os.Bundle
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
+import com.vovremya.alarm.localization.tr
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -28,42 +30,7 @@ class CalendarRepository(private val context: Context) {
 
     suspend fun getCalendars(): List<CalendarInfo> = withContext(Dispatchers.IO) {
         if (!hasPermission()) return@withContext emptyList()
-        val projection = arrayOf(
-            CalendarContract.Calendars._ID,
-            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
-            CalendarContract.Calendars.ACCOUNT_NAME,
-            CalendarContract.Calendars.CALENDAR_COLOR,
-            CalendarContract.Calendars.ACCOUNT_TYPE,
-            CalendarContract.Calendars.SYNC_EVENTS,
-            CalendarContract.Calendars.VISIBLE,
-            CalendarContract.Calendars.OWNER_ACCOUNT,
-            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
-            CalendarContract.Calendars.IS_PRIMARY,
-        )
-        val calendars = mutableListOf<CalendarInfo>()
-        context.contentResolver.query(
-            CalendarContract.Calendars.CONTENT_URI,
-            projection,
-            null,
-            null,
-            "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} COLLATE NOCASE ASC",
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                calendars += CalendarInfo(
-                    id = cursor.getLong(0),
-                    displayName = cursor.getString(1).orEmpty().ifBlank { "Календарь" },
-                    accountName = cursor.getString(2).orEmpty(),
-                    color = cursor.getInt(3).takeIf { it != 0 } ?: 0xFF6558D3.toInt(),
-                    accountType = cursor.getString(4).orEmpty(),
-                    syncEvents = cursor.getInt(5) == 1,
-                    visible = cursor.getInt(6) == 1,
-                    ownerAccount = cursor.getString(7).orEmpty(),
-                    accessLevel = cursor.getInt(8),
-                    isPrimary = cursor.getInt(9) == 1,
-                )
-            }
-        }
-        calendars.distinctBy(CalendarInfo::id)
+        queryCalendars()
     }
 
     suspend fun getUpcomingEvents(
@@ -79,13 +46,18 @@ class CalendarRepository(private val context: Context) {
         val zone = ZoneId.systemDefault()
         val rangeStart = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().atStartOfDay(zone)
         val rangeEnd = rangeStart.plusDays(horizonDays)
-        val instanceResult = runCatching { queryInstances(rangeStart, rangeEnd) }
-        val directResult = runCatching { queryEvents(rangeStart, rangeEnd) }
-        val instances = instanceResult.getOrDefault(emptyList())
-        val direct = directResult.getOrDefault(emptyList())
+        val calendarResult = runCatching { queryCalendars().associateBy(CalendarInfo::id) }
+        val calendars = calendarResult.getOrDefault(emptyMap())
+        val instanceResult = runCatching { queryInstances(rangeStart, rangeEnd, calendars) }
+        val directResult = runCatching { queryEvents(rangeStart, rangeEnd, calendars) }
+        val instances = instanceResult.getOrNull()?.events.orEmpty()
+        val direct = directResult.getOrNull()?.events.orEmpty()
         val instanceKeys = instances.mapTo(mutableSetOf()) { it.eventId to it.startMillis }
         val directOnly = direct.filter { (it.eventId to it.startMillis) !in instanceKeys }
         val errors = buildList {
+            calendarResult.exceptionOrNull()?.let { add("Calendars: ${it.logMessage()}") }
+            instanceResult.getOrNull()?.warnings?.let(::addAll)
+            directResult.getOrNull()?.warnings?.let(::addAll)
             instanceResult.exceptionOrNull()?.let { add("Instances: ${it.logMessage()}") }
             directResult.exceptionOrNull()?.let { add("Events: ${it.logMessage()}") }
         }
@@ -134,12 +106,71 @@ class CalendarRepository(private val context: Context) {
         awaitClose { context.contentResolver.unregisterContentObserver(observer) }
     }.conflate()
 
-    private fun queryInstances(start: ZonedDateTime, end: ZonedDateTime): List<RawEvent> {
+    private fun queryCalendars(): List<CalendarInfo> {
+        val richProjection = arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.CALENDAR_COLOR,
+            CalendarContract.Calendars.ACCOUNT_TYPE,
+            CalendarContract.Calendars.SYNC_EVENTS,
+            CalendarContract.Calendars.VISIBLE,
+            CalendarContract.Calendars.OWNER_ACCOUNT,
+            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+            CalendarContract.Calendars.IS_PRIMARY,
+        )
+        return runCatching { queryCalendarRows(richProjection, rich = true) }
+            .getOrElse {
+                queryCalendarRows(
+                    arrayOf(
+                        CalendarContract.Calendars._ID,
+                        CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                        CalendarContract.Calendars.ACCOUNT_NAME,
+                        CalendarContract.Calendars.CALENDAR_COLOR,
+                    ),
+                    rich = false,
+                )
+            }
+            .distinctBy(CalendarInfo::id)
+    }
+
+    private fun queryCalendarRows(projection: Array<String>, rich: Boolean): List<CalendarInfo> {
+        val calendars = mutableListOf<CalendarInfo>()
+        context.contentResolver.query(
+            CalendarContract.Calendars.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} COLLATE NOCASE ASC",
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                calendars += CalendarInfo(
+                    id = cursor.getLong(0),
+                    displayName = cursor.getString(1).orEmpty().ifBlank { tr("Календарь") },
+                    accountName = cursor.getString(2).orEmpty(),
+                    color = cursor.getInt(3).takeIf { it != 0 } ?: DEFAULT_CALENDAR_COLOR,
+                    accountType = if (rich) cursor.getString(4).orEmpty() else "",
+                    syncEvents = !rich || cursor.getInt(5) == 1,
+                    visible = !rich || cursor.getInt(6) == 1,
+                    ownerAccount = if (rich) cursor.getString(7).orEmpty() else "",
+                    accessLevel = if (rich) cursor.getInt(8) else 0,
+                    isPrimary = rich && cursor.getInt(9) == 1,
+                )
+            }
+        }
+        return calendars
+    }
+
+    private fun queryInstances(
+        start: ZonedDateTime,
+        end: ZonedDateTime,
+        calendars: Map<Long, CalendarInfo>,
+    ): QueryOutcome {
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
             ContentUris.appendId(it, start.toInstant().toEpochMilli())
             ContentUris.appendId(it, end.toInstant().toEpochMilli())
         }.build()
-        val projection = arrayOf(
+        val richProjection = arrayOf(
             CalendarContract.Instances.EVENT_ID,
             CalendarContract.Instances.BEGIN,
             CalendarContract.Instances.TITLE,
@@ -149,8 +180,31 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Instances.CALENDAR_COLOR,
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.STATUS,
-            CalendarContract.Instances.SELF_ATTENDEE_STATUS,
         )
+        val richResult = runCatching { queryInstanceRows(uri, richProjection, calendars, rich = true) }
+        richResult.getOrNull()?.let { return QueryOutcome(it) }
+        val minimalProjection = arrayOf(
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.STATUS,
+        )
+        return QueryOutcome(
+            events = queryInstanceRows(uri, minimalProjection, calendars, rich = false),
+            warnings = listOf(
+                "Instances rich projection: ${richResult.exceptionOrNull()!!.logMessage()}; minimal fallback used",
+            ),
+        )
+    }
+
+    private fun queryInstanceRows(
+        uri: Uri,
+        projection: Array<String>,
+        calendars: Map<Long, CalendarInfo>,
+        rich: Boolean,
+    ): List<RawEvent> {
         val events = mutableListOf<RawEvent>()
         context.contentResolver.query(
             uri,
@@ -160,17 +214,22 @@ class CalendarRepository(private val context: Context) {
             "${CalendarContract.Instances.BEGIN} ASC",
         )?.use { cursor ->
             while (cursor.moveToNext()) {
+                val calendarId = cursor.getLong(if (rich) 4 else 3)
+                val calendar = calendars[calendarId]
                 events += RawEvent(
                     eventId = cursor.getLong(0),
                     startMillis = cursor.getLong(1),
-                    title = cursor.getString(2).orEmpty().ifBlank { "Событие" },
-                    location = cursor.getString(3)?.takeIf(String::isNotBlank),
-                    calendarId = cursor.getLong(4),
-                    calendarName = cursor.getString(5).orEmpty().ifBlank { "Календарь" },
-                    calendarColor = cursor.getInt(6).takeIf { it != 0 } ?: 0xFF6558D3.toInt(),
-                    allDay = cursor.getInt(7) == 1,
-                    canceled = cursor.getInt(8) == CalendarContract.Events.STATUS_CANCELED,
-                    declined = cursor.getInt(9) == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED,
+                    title = cursor.getString(2).orEmpty().ifBlank { tr("Событие") },
+                    location = if (rich) cursor.getString(3)?.takeIf(String::isNotBlank) else null,
+                    calendarId = calendarId,
+                    calendarName = if (rich) cursor.getString(5).orEmpty().ifBlank {
+                        calendar?.displayName ?: tr("Календарь")
+                    } else calendar?.displayName ?: tr("Календарь"),
+                    calendarColor = if (rich) {
+                        cursor.getInt(6).takeIf { it != 0 } ?: calendar?.color ?: DEFAULT_CALENDAR_COLOR
+                    } else calendar?.color ?: DEFAULT_CALENDAR_COLOR,
+                    allDay = cursor.getInt(if (rich) 7 else 4) == 1,
+                    canceled = cursor.getInt(if (rich) 8 else 5) == CalendarContract.Events.STATUS_CANCELED,
                     source = EventSource.INSTANCES,
                 )
             }
@@ -178,8 +237,12 @@ class CalendarRepository(private val context: Context) {
         return events
     }
 
-    private fun queryEvents(start: ZonedDateTime, end: ZonedDateTime): List<RawEvent> {
-        val projection = arrayOf(
+    private fun queryEvents(
+        start: ZonedDateTime,
+        end: ZonedDateTime,
+        calendars: Map<Long, CalendarInfo>,
+    ): QueryOutcome {
+        val richProjection = arrayOf(
             CalendarContract.Events._ID,
             CalendarContract.Events.DTSTART,
             CalendarContract.Events.TITLE,
@@ -189,9 +252,33 @@ class CalendarRepository(private val context: Context) {
             CalendarContract.Events.CALENDAR_COLOR,
             CalendarContract.Events.ALL_DAY,
             CalendarContract.Events.STATUS,
-            CalendarContract.Events.SELF_ATTENDEE_STATUS,
             CalendarContract.Events.DELETED,
         )
+        val richResult = runCatching { queryEventRows(start, end, richProjection, calendars, rich = true) }
+        richResult.getOrNull()?.let { return QueryOutcome(it) }
+        val minimalProjection = arrayOf(
+            CalendarContract.Events._ID,
+            CalendarContract.Events.DTSTART,
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.STATUS,
+        )
+        return QueryOutcome(
+            events = queryEventRows(start, end, minimalProjection, calendars, rich = false),
+            warnings = listOf(
+                "Events rich projection: ${richResult.exceptionOrNull()!!.logMessage()}; minimal fallback used",
+            ),
+        )
+    }
+
+    private fun queryEventRows(
+        start: ZonedDateTime,
+        end: ZonedDateTime,
+        projection: Array<String>,
+        calendars: Map<Long, CalendarInfo>,
+        rich: Boolean,
+    ): List<RawEvent> {
         val events = mutableListOf<RawEvent>()
         context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
@@ -201,20 +288,25 @@ class CalendarRepository(private val context: Context) {
             "${CalendarContract.Events.DTSTART} ASC",
         )?.use { cursor ->
             while (cursor.moveToNext()) {
-                // Some local/OEM calendars store DELETED as NULL. A SQL `deleted=0`
-                // predicate silently hides those otherwise valid events, so filter here.
-                if (!cursor.isNull(10) && cursor.getInt(10) != 0) continue
+                // Some OEM providers store DELETED as NULL and some reject that
+                // column entirely. The minimal fallback intentionally omits it.
+                if (rich && !cursor.isNull(9) && cursor.getInt(9) != 0) continue
+                val calendarId = cursor.getLong(if (rich) 4 else 3)
+                val calendar = calendars[calendarId]
                 events += RawEvent(
                     eventId = cursor.getLong(0),
                     startMillis = cursor.getLong(1),
-                    title = cursor.getString(2).orEmpty().ifBlank { "Событие" },
-                    location = cursor.getString(3)?.takeIf(String::isNotBlank),
-                    calendarId = cursor.getLong(4),
-                    calendarName = cursor.getString(5).orEmpty().ifBlank { "Календарь" },
-                    calendarColor = cursor.getInt(6).takeIf { it != 0 } ?: 0xFF6558D3.toInt(),
-                    allDay = cursor.getInt(7) == 1,
-                    canceled = cursor.getInt(8) == CalendarContract.Events.STATUS_CANCELED,
-                    declined = cursor.getInt(9) == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED,
+                    title = cursor.getString(2).orEmpty().ifBlank { tr("Событие") },
+                    location = if (rich) cursor.getString(3)?.takeIf(String::isNotBlank) else null,
+                    calendarId = calendarId,
+                    calendarName = if (rich) cursor.getString(5).orEmpty().ifBlank {
+                        calendar?.displayName ?: tr("Календарь")
+                    } else calendar?.displayName ?: tr("Календарь"),
+                    calendarColor = if (rich) {
+                        cursor.getInt(6).takeIf { it != 0 } ?: calendar?.color ?: DEFAULT_CALENDAR_COLOR
+                    } else calendar?.color ?: DEFAULT_CALENDAR_COLOR,
+                    allDay = cursor.getInt(if (rich) 7 else 4) == 1,
+                    canceled = cursor.getInt(if (rich) 8 else 5) == CalendarContract.Events.STATUS_CANCELED,
                     source = EventSource.EVENTS,
                 )
             }
@@ -231,16 +323,13 @@ class CalendarRepository(private val context: Context) {
         val usable = mutableListOf<CalendarEvent>()
         val diagnostics = mutableListOf<EventDiagnostic>()
         var excludedCanceled = 0
-        var excludedDeclined = 0
         rawEvents.forEach { event ->
-            val decision = when {
-                event.canceled -> EventDecision.CANCELED.also { excludedCanceled++ }
-                event.declined -> EventDecision.DECLINED.also { excludedDeclined++ }
-                else -> null
-            }
-            if (decision != null) {
-                diagnostics += event.toDiagnostic(decision)
+            if (event.canceled) {
+                excludedCanceled++
+                diagnostics += event.toDiagnostic(EventDecision.CANCELED)
             } else {
+                // Do not filter SELF_ATTENDEE_STATUS. Several local and OEM
+                // providers incorrectly mark ordinary events as declined.
                 usable += CalendarEvent(
                     eventId = event.eventId,
                     instanceStartMillis = event.startMillis,
@@ -258,7 +347,7 @@ class CalendarRepository(private val context: Context) {
             events = usable,
             totalInstances = rawEvents.size,
             excludedCanceled = excludedCanceled,
-            excludedDeclined = excludedDeclined,
+            excludedDeclined = 0,
             instanceRows = instanceRows,
             directEventRows = directEventRows,
             eventDiagnostics = diagnostics,
@@ -276,7 +365,6 @@ class CalendarRepository(private val context: Context) {
         val calendarColor: Int,
         val allDay: Boolean,
         val canceled: Boolean,
-        val declined: Boolean,
         val source: EventSource,
     ) {
         fun toDiagnostic(decision: EventDecision) = EventDiagnostic(
@@ -290,8 +378,17 @@ class CalendarRepository(private val context: Context) {
         )
     }
 
+    private data class QueryOutcome(
+        val events: List<RawEvent>,
+        val warnings: List<String> = emptyList(),
+    )
+
     private fun Throwable.logMessage(): String = buildString {
         append(this@logMessage::class.java.simpleName)
         this@logMessage.message?.takeIf(String::isNotBlank)?.let { append(": ").append(it.take(180)) }
+    }
+
+    private companion object {
+        const val DEFAULT_CALENDAR_COLOR = 0xFF6558D3.toInt()
     }
 }

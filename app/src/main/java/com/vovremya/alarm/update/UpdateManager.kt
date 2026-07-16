@@ -18,7 +18,13 @@ class UpdateManager(
     private val context: Context,
     private val notificationHelper: NotificationHelper,
 ) {
-    suspend fun checkAndDownloadUpdate(): UpdateCheckResult = withContext(Dispatchers.IO) {
+    suspend fun checkAndDownloadUpdate(force: Boolean = true): UpdateCheckResult = withContext(Dispatchers.IO) {
+        val preferences = context.getSharedPreferences(UPDATE_PREFERENCES, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (!force && now - preferences.getLong(KEY_LAST_CHECK, 0L) < AUTO_CHECK_INTERVAL_MILLIS) {
+            return@withContext UpdateCheckResult.NotDue
+        }
+        if (!force) preferences.edit().putLong(KEY_LAST_CHECK, now).apply()
         val repository = BuildConfig.GITHUB_REPOSITORY.trim().trim('/')
         if (!repository.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) {
             return@withContext UpdateCheckResult.NotConfigured
@@ -132,12 +138,19 @@ class UpdateManager(
         }
         return 0
     }
+
+    private companion object {
+        const val UPDATE_PREFERENCES = "github_update_state"
+        const val KEY_LAST_CHECK = "last_automatic_check"
+        const val AUTO_CHECK_INTERVAL_MILLIS = 20L * 60 * 60_000
+    }
 }
 
 sealed interface UpdateCheckResult {
     data object NotConfigured : UpdateCheckResult
     data object UpToDate : UpdateCheckResult
     data object NoApkAsset : UpdateCheckResult
+    data object NotDue : UpdateCheckResult
     data class Downloaded(val version: String, val file: File) : UpdateCheckResult
     data class Failed(val reason: String) : UpdateCheckResult
 }

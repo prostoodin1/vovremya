@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.vovremya.alarm.ui.theme.VovremyaTheme
+import com.vovremya.alarm.localization.tr
 import java.io.File
 
 class UpdateInstallerActivity : ComponentActivity() {
@@ -44,7 +45,7 @@ class UpdateInstallerActivity : ComponentActivity() {
                 ) {
                     Icon(Icons.Rounded.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary)
                     CircularProgressIndicator()
-                    Text("Подготавливаем обновление…", style = MaterialTheme.typography.titleMedium)
+                    Text(tr("Подготавливаем обновление…"), style = MaterialTheme.typography.titleMedium)
                 }
             }
         }

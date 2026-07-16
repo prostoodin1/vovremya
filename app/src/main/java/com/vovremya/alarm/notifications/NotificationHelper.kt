@@ -17,13 +17,14 @@ import com.vovremya.alarm.MainActivity
 import com.vovremya.alarm.R
 import com.vovremya.alarm.data.SyncResult
 import com.vovremya.alarm.domain.AlarmPayload
+import com.vovremya.alarm.localization.appLocale
+import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.AlarmActivity
 import com.vovremya.alarm.update.UpdateInstallerActivity
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 class NotificationHelper(private val context: Context) {
     private val manager = NotificationManagerCompat.from(context)
@@ -47,7 +48,7 @@ class NotificationHelper(private val context: Context) {
                 "${context.getString(R.string.alarm_channel)} · ${alarmModeName(sound, vibration)}",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Сигнал перед событием"
+                description = tr("Сигнал перед событием")
                 enableVibration(vibration)
                 vibrationPattern = if (vibration) longArrayOf(0, 600, 300, 600) else null
                 if (sound) setSound(alarmSound, audio) else setSound(null, null)
@@ -58,19 +59,19 @@ class NotificationHelper(private val context: Context) {
             PLANNING_CHANNEL,
             context.getString(R.string.sync_channel),
             NotificationManager.IMPORTANCE_DEFAULT,
-        ).apply { description = "Итог ежедневной проверки календаря" }
+        ).apply { description = tr("Итог ежедневной проверки календаря") }
         val updates = NotificationChannel(
             UPDATE_CHANNEL,
             context.getString(R.string.update_channel),
             NotificationManager.IMPORTANCE_DEFAULT,
-        ).apply { description = "Новые версии из GitHub Releases" }
+        ).apply { description = tr("Новые версии из GitHub Releases") }
         systemManager.createNotificationChannels(alarmChannels + listOf(planning, updates))
     }
 
     fun showAlarm(intent: Intent) {
         if (!canNotify()) return
         val key = intent.getStringExtra(AlarmPayload.EXTRA_KEY).orEmpty()
-        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank { "Пора собираться" }
+        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank { tr("Пора собираться") }
         val eventStart = intent.getLongExtra(AlarmPayload.EXTRA_EVENT_START, 0L)
         val location = intent.getStringExtra(AlarmPayload.EXTRA_LOCATION)
         val soundEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
@@ -86,7 +87,7 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val content = buildString {
-            append("Событие в ${formatTime(eventStart)}")
+            append(tr("Событие в %s", formatTime(eventStart)))
             if (!location.isNullOrBlank()) append(" · $location")
         }
         val notification = NotificationCompat.Builder(
@@ -113,14 +114,14 @@ class NotificationHelper(private val context: Context) {
         if (!canNotify()) return
         val alarms = result.alarms
         val next = alarms.firstOrNull()
-        val title = if (next == null) "На ближайшие дни будильников нет" else "Будильник готов"
+        val title = tr(if (next == null) "На ближайшие дни будильников нет" else "Будильник готов")
         val body = if (next == null) {
             when {
                 result.diagnostics.totalInstances == 0 && result.diagnostics.unsyncedCalendars > 0 ->
-                    "События не прочитаны: проверьте синхронизацию календарей"
+                    tr("События не прочитаны: проверьте синхронизацию календарей")
                 result.diagnostics.totalInstances == 0 ->
-                    "Календарь не вернул событий на ближайшие ${result.diagnostics.lookAheadDays} дней"
-                else -> "Календарь проверен — события не прошли выбранные фильтры"
+                    tr("Календарь не вернул событий на ближайшие %d дней", result.diagnostics.lookAheadDays)
+                else -> tr("Календарь проверен — события не прошли выбранные фильтры")
             }
         } else {
             "${formatDay(next.alarmAtMillis)}, ${formatTime(next.alarmAtMillis)} · ${next.title}"
@@ -158,8 +159,8 @@ class NotificationHelper(private val context: Context) {
             UPDATE_NOTIFICATION_ID,
             NotificationCompat.Builder(context, UPDATE_CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("Вовремя $version готово")
-                .setContentText("Нажмите, чтобы подтвердить установку обновления")
+                .setContentTitle(tr("%s %s готово", context.getString(R.string.app_name), version))
+                .setContentText(tr("Нажмите, чтобы подтвердить установку обновления"))
                 .setContentIntent(install)
                 .setAutoCancel(true)
                 .build(),
@@ -192,19 +193,19 @@ class NotificationHelper(private val context: Context) {
     }
 
     private fun alarmModeName(sound: Boolean, vibration: Boolean): String = when {
-        sound && vibration -> "звук и вибрация"
-        sound -> "только звук"
-        vibration -> "только вибрация"
-        else -> "без звука"
+        sound && vibration -> tr("звук и вибрация")
+        sound -> tr("только звук")
+        vibration -> tr("только вибрация")
+        else -> tr("без звука")
     }
 
     private fun formatTime(millis: Long): String = Instant.ofEpochMilli(millis)
         .atZone(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("HH:mm", Locale("ru")))
+        .format(DateTimeFormatter.ofPattern("HH:mm", appLocale()))
 
     private fun formatDay(millis: Long): String = Instant.ofEpochMilli(millis)
         .atZone(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale("ru")))
+        .format(DateTimeFormatter.ofPattern("EEE, d MMM", appLocale()))
 
     companion object {
         const val ALARM_CHANNEL_SOUND_VIBRATION = "event_alarms_sound_vibration_v2"

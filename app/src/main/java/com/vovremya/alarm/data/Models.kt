@@ -21,7 +21,13 @@ data class AppSettings(
     /** An empty set means every calendar available through Android. */
     val selectedCalendarIds: Set<Long> = emptySet(),
     val automaticUpdates: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val accentTheme: AccentTheme = AccentTheme.VIOLET,
 )
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+enum class AccentTheme { VIOLET, BLUE, GREEN, ORANGE, ROSE, TEAL }
 
 data class CalendarInfo(
     val id: Long,

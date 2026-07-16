@@ -10,7 +10,10 @@ import android.provider.CalendarContract
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.coroutines.runBlocking
+import com.vovremya.alarm.localization.tr
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,7 +44,7 @@ class CalendarRepositoryTest {
         assertEquals(0, result.instanceRows)
         assertEquals(1, result.directEventRows)
         assertEquals(1, result.totalInstances)
-        assertEquals("Событие", result.events.single().title)
+        assertEquals(tr("Событие"), result.events.single().title)
         assertEquals(EventSource.EVENTS, result.events.single().source)
     }
 
@@ -59,14 +62,32 @@ class CalendarRepositoryTest {
         assertEquals(2, result.totalInstances)
         assertEquals(2, result.events.size)
         val untitled = result.events.single { it.eventId == 42L }
-        assertEquals("\u0421\u043e\u0431\u044b\u0442\u0438\u0435", untitled.title)
+        assertEquals(tr("Событие"), untitled.title)
         assertEquals(EventSource.EVENTS, untitled.source)
+    }
+
+    @Test
+    fun `reads a local event with minimal projection and never filters attendee status`() = runBlocking {
+        val provider = FakeCalendarProvider(eventStart, rejectRichEventProjection = true)
+        ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, provider)
+
+        val result = CalendarRepository(RuntimeEnvironment.getApplication())
+            .scanUpcomingEvents(eventStart - 24 * 60 * 60_000L)
+
+        assertEquals(1, result.events.size)
+        assertEquals(EventSource.EVENTS, result.events.single().source)
+        assertTrue(result.readErrors.any { it.contains("minimal fallback used") })
+        assertFalse(provider.attendeeColumnRequested)
     }
 
     private class FakeCalendarProvider(
         private val eventStart: Long,
         private val includeInstance: Boolean = false,
+        private val rejectRichEventProjection: Boolean = false,
     ) : ContentProvider() {
+        var attendeeColumnRequested: Boolean = false
+            private set
+
         override fun onCreate(): Boolean = true
 
         override fun query(
@@ -76,6 +97,16 @@ class CalendarRepositoryTest {
             selectionArgs: Array<out String>?,
             sortOrder: String?,
         ): Cursor {
+            if (projection?.any { it == CalendarContract.Events.SELF_ATTENDEE_STATUS } == true) {
+                attendeeColumnRequested = true
+            }
+            if (
+                uri.pathSegments.firstOrNull() == "events" &&
+                rejectRichEventProjection &&
+                projection?.any { it == CalendarContract.Events.CALENDAR_DISPLAY_NAME } == true
+            ) {
+                throw IllegalArgumentException("OEM provider rejects joined event columns")
+            }
             if (
                 uri.pathSegments.firstOrNull() == "events" &&
                 selection?.contains(CalendarContract.Events.DELETED) == true

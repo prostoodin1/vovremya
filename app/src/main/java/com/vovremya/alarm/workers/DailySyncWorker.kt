@@ -12,14 +12,22 @@ class DailySyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val container = (applicationContext as VovremyaApplication).container
-        if (!container.calendarRepository.hasPermission()) return Result.success()
-        return runCatching {
-            val sync = container.alarmScheduler.syncFromCalendar()
-            container.notificationHelper.showPlanningSummary(sync)
-            val settings = container.settingsStore.settings.first()
-            if (settings.automaticUpdates) container.updateManager.checkAndDownloadUpdate()
-            Result.success()
-        }.getOrElse { Result.retry() }
+        val settings = container.settingsStore.settings.first()
+        val calendarSyncFailed = if (container.calendarRepository.hasPermission()) {
+            runCatching {
+                val sync = container.alarmScheduler.syncFromCalendar()
+                container.notificationHelper.showPlanningSummary(sync)
+            }.isFailure
+        } else {
+            false
+        }
+
+        // Update checks do not depend on calendar permission or provider health.
+        // Android still asks the user to confirm installing a downloaded APK.
+        if (settings.automaticUpdates) {
+            runCatching { container.updateManager.checkAndDownloadUpdate(force = false) }
+        }
+        return if (calendarSyncFailed) Result.retry() else Result.success()
     }
 
     companion object {
