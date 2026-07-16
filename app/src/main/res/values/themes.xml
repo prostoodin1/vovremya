@@ -20,4 +20,11 @@
         <item name="android:navigationBarColor">@color/alarm_background</item>
         <item name="android:statusBarColor">@color/alarm_background</item>
     </style>
+
+    <style name="Theme.Vovremya.Update" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:navigationBarColor">@color/splash_background</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+    </style>
 </resources>

@@ -63,8 +63,11 @@ class NotificationHelper(private val context: Context) {
         val updates = NotificationChannel(
             UPDATE_CHANNEL,
             context.getString(R.string.update_channel),
-            NotificationManager.IMPORTANCE_DEFAULT,
-        ).apply { description = tr("Новые версии из GitHub Releases") }
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = tr("Новые версии из GitHub Releases")
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
         systemManager.createNotificationChannels(alarmChannels + listOf(planning, updates))
     }
 
@@ -152,20 +155,31 @@ class NotificationHelper(private val context: Context) {
             UPDATE_NOTIFICATION_ID,
             Intent(context, UpdateInstallerActivity::class.java).apply {
                 putExtra(UpdateInstallerActivity.EXTRA_APK_PATH, apk.absolutePath)
+                putExtra(UpdateInstallerActivity.EXTRA_VERSION, version)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val body = tr("Нажмите, чтобы подтвердить установку обновления")
         notifySafely(
             UPDATE_NOTIFICATION_ID,
             NotificationCompat.Builder(context, UPDATE_CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(tr("%s %s готово", context.getString(R.string.app_name), version))
-                .setContentText(tr("Нажмите, чтобы подтвердить установку обновления"))
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setFullScreenIntent(install, true)
                 .setContentIntent(install)
+                .addAction(R.drawable.ic_notification, tr("Установить"), install)
                 .setAutoCancel(true)
                 .build(),
         )
     }
+
+    fun cancelUpdate() = manager.cancel(UPDATE_NOTIFICATION_ID)
 
     private fun canNotify(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -213,7 +227,7 @@ class NotificationHelper(private val context: Context) {
         const val ALARM_CHANNEL_VIBRATION = "event_alarms_vibration_v2"
         const val ALARM_CHANNEL_SILENT = "event_alarms_silent_v2"
         const val PLANNING_CHANNEL = "daily_planning"
-        const val UPDATE_CHANNEL = "github_updates"
+        const val UPDATE_CHANNEL = "github_updates_full_screen_v2"
         private const val PLANNING_NOTIFICATION_ID = 1900
         private const val UPDATE_NOTIFICATION_ID = 2300
     }

@@ -1118,19 +1118,51 @@ private fun MinuteChoiceChips(current: Int, choices: List<Int>, onChange: (Int) 
 
 @Composable
 private fun SettingsCard(icon: ImageVector, title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
+    var expanded by rememberSaveable(title) { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = spring(dampingRatio = .82f, stiffness = 430f),
+        label = "settingsSectionArrow",
+    )
     Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
                     Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = tr(if (expanded) "Свернуть" else "Развернуть"),
+                    modifier = Modifier.rotate(arrowRotation),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
-            content()
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(260)) + expandVertically(
+                    animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                ),
+                exit = fadeOut(tween(150)) + shrinkVertically(
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                ),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    content()
+                }
+            }
         }
     }
 }

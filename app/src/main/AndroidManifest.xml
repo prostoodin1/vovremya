@@ -28,8 +28,12 @@
 
         <activity
             android:name=".update.UpdateInstallerActivity"
+            android:excludeFromRecents="true"
             android:exported="false"
-            android:theme="@style/Theme.Vovremya" />
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Vovremya.Update"
+            android:turnScreenOn="true" />
 
         <activity
             android:name=".ui.AlarmActivity"
