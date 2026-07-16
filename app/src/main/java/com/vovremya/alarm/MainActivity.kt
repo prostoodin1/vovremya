@@ -56,6 +56,8 @@ class MainActivity : ComponentActivity() {
             VovremyaTheme(
                 themeMode = state.settings.themeMode,
                 accentTheme = state.settings.accentTheme,
+                customAccentColor = state.settings.customAccentColor,
+                backgroundStyle = state.settings.backgroundStyle,
             ) {
                 var permissions by remember { mutableStateOf(readPermissions()) }
                 DisposableEffect(lifecycle) {
@@ -119,6 +121,8 @@ class MainActivity : ComponentActivity() {
                     onAutomaticUpdates = viewModel::setAutomaticUpdates,
                     onThemeMode = viewModel::setThemeMode,
                     onAccentTheme = viewModel::setAccentTheme,
+                    onCustomAccentColor = viewModel::setCustomAccentColor,
+                    onBackgroundStyle = viewModel::setBackgroundStyle,
                     onCheckUpdates = viewModel::checkForUpdates,
                     onMessageShown = viewModel::clearMessage,
                 )

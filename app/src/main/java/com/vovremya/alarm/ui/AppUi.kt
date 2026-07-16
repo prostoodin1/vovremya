@@ -12,9 +12,16 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -41,8 +48,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Alarm
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -87,9 +94,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardOptions
@@ -101,6 +110,7 @@ import androidx.compose.ui.unit.sp
 import com.vovremya.alarm.BuildConfig
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.AccentTheme
+import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
 import com.vovremya.alarm.data.EventSource
@@ -110,7 +120,7 @@ import com.vovremya.alarm.data.ThemeMode
 import com.vovremya.alarm.localization.appLocale
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.Mint
-import com.vovremya.alarm.ui.theme.Violet
+import com.vovremya.alarm.ui.theme.previewColor
 import java.time.DayOfWeek
 import java.time.Duration
 import java.time.Instant
@@ -159,6 +169,8 @@ fun MainApp(
     onAutomaticUpdates: (Boolean) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
+    onCustomAccentColor: (Int) -> Unit,
+    onBackgroundStyle: (BackgroundStyle) -> Unit,
     onCheckUpdates: () -> Unit,
     onMessageShown: () -> Unit,
 ) {
@@ -181,12 +193,20 @@ fun MainApp(
             targetState = screen,
             transitionSpec = {
                 if (targetState == Screen.Settings) {
-                    (slideInHorizontally(tween(340)) { it / 3 } + fadeIn()) togetherWith
-                        (slideOutHorizontally(tween(280)) { -it / 4 } + fadeOut())
+                    (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 330f)) { it / 3 } +
+                        fadeIn(tween(280))) togetherWith
+                        (slideOutHorizontally(spring(dampingRatio = .92f, stiffness = 430f)) { -it / 5 } +
+                            fadeOut(tween(210)))
                 } else {
-                    (slideInHorizontally(tween(340)) { -it / 3 } + fadeIn()) togetherWith
-                        (slideOutHorizontally(tween(280)) { it / 4 } + fadeOut())
-                }.using(SizeTransform(clip = false))
+                    (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 330f)) { -it / 3 } +
+                        fadeIn(tween(280))) togetherWith
+                        (slideOutHorizontally(spring(dampingRatio = .92f, stiffness = 430f)) { it / 5 } +
+                            fadeOut(tween(210)))
+                }.using(
+                    SizeTransform(clip = false) { _, _ ->
+                        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
+                    },
+                )
             },
             label = "screen",
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -225,6 +245,8 @@ fun MainApp(
                     onAutomaticUpdates = onAutomaticUpdates,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
+                    onCustomAccentColor = onCustomAccentColor,
+                    onBackgroundStyle = onBackgroundStyle,
                     onCheckUpdates = onCheckUpdates,
                     onSync = onSync,
                     onRequestCalendar = onRequestCalendar,
@@ -253,7 +275,15 @@ private fun HomeScreen(
     ) {
         item { HomeHeader(onSettings) }
         item {
-            AnimatedVisibility(!permissions.allGranted) {
+            AnimatedVisibility(
+                visible = !permissions.allGranted,
+                enter = fadeIn(tween(320)) + expandVertically(
+                    animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                ),
+                exit = fadeOut(tween(200)) + shrinkVertically(
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 440f),
+                ),
+            ) {
                 PermissionCard(
                     permissions,
                     onRequestCalendar,
@@ -286,7 +316,16 @@ private fun HomeScreen(
         if (state.alarms.isEmpty()) {
             item { EmptyAlarms(permissions.calendar, state.diagnostics) }
         } else {
-            items(state.alarms, key = ScheduledAlarm::key) { alarm -> AlarmRow(alarm) }
+            items(state.alarms, key = ScheduledAlarm::key) { alarm ->
+                AlarmRow(
+                    alarm = alarm,
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = tween(360),
+                        placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
+                        fadeOutSpec = tween(220),
+                    ),
+                )
+            }
         }
         item {
             Text(
@@ -370,31 +409,43 @@ private fun NextAlarmCard(alarm: ScheduledAlarm?) {
     val cardText = MaterialTheme.colorScheme.onPrimary
     Card(
         shape = RoundedCornerShape(30.dp),
-        modifier = Modifier.fillMaxWidth().animateContentSize(tween(350)),
+        modifier = Modifier.fillMaxWidth().animateContentSize(
+            spring(dampingRatio = .86f, stiffness = 360f),
+        ),
     ) {
         Box(Modifier.fillMaxWidth().background(Brush.linearGradient(start)).padding(24.dp)) {
-            if (alarm == null) {
-                Column(Modifier.padding(vertical = 18.dp)) {
-                    Icon(Icons.Rounded.EventAvailable, null, tint = Color(0xFFD8D3FF), modifier = Modifier.size(36.dp))
-                    Spacer(Modifier.height(18.dp))
-                    Text(tr("Всё спокойно"), color = cardText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text(tr("Следующий будильник появится после проверки календаря"), color = cardText.copy(alpha = .82f))
-                }
-            } else {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Alarm, null, tint = Color(0xFFD8D3FF))
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("СЛЕДУЮЩИЙ БУДИЛЬНИК"), color = cardText.copy(alpha = .82f), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            AnimatedContent(
+                targetState = alarm,
+                contentKey = { it?.key },
+                transitionSpec = {
+                    (fadeIn(tween(360)) + scaleIn(tween(420), initialScale = .975f)) togetherWith
+                        (fadeOut(tween(210)) + scaleOut(tween(240), targetScale = .985f))
+                },
+                label = "nextAlarm",
+            ) { displayedAlarm ->
+                if (displayedAlarm == null) {
+                    Column(Modifier.padding(vertical = 18.dp)) {
+                        Icon(Icons.Rounded.EventAvailable, null, tint = cardText.copy(alpha = .82f), modifier = Modifier.size(36.dp))
+                        Spacer(Modifier.height(18.dp))
+                        Text(tr("Всё спокойно"), color = cardText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text(tr("Следующий будильник появится после проверки календаря"), color = cardText.copy(alpha = .82f))
                     }
-                    Spacer(Modifier.height(18.dp))
-                    Text(formatTime(alarm.alarmAtMillis), color = cardText, fontSize = 58.sp, lineHeight = 62.sp, fontWeight = FontWeight.Light)
-                    Text(formatDayLong(alarm.alarmAtMillis), color = cardText.copy(alpha = .9f), style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(22.dp))
-                    Surface(color = Color.White.copy(alpha = .13f), shape = RoundedCornerShape(18.dp)) {
-                        Column(Modifier.padding(14.dp)) {
-                            Text(alarm.title, color = cardText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(tr("Событие в %s · %s", formatTime(alarm.eventStartMillis), timeUntil(alarm.alarmAtMillis)), color = cardText.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Alarm, null, tint = cardText.copy(alpha = .82f))
+                            Spacer(Modifier.width(8.dp))
+                            Text(tr("СЛЕДУЮЩИЙ БУДИЛЬНИК"), color = cardText.copy(alpha = .82f), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        Text(formatTime(displayedAlarm.alarmAtMillis), color = cardText, fontSize = 58.sp, lineHeight = 62.sp, fontWeight = FontWeight.Light)
+                        Text(formatDayLong(displayedAlarm.alarmAtMillis), color = cardText.copy(alpha = .9f), style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(22.dp))
+                        Surface(color = cardText.copy(alpha = .13f), shape = RoundedCornerShape(18.dp)) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text(displayedAlarm.title, color = cardText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(tr("Событие в %s · %s", formatTime(displayedAlarm.eventStartMillis), timeUntil(displayedAlarm.alarmAtMillis)), color = cardText.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
@@ -404,9 +455,9 @@ private fun NextAlarmCard(alarm: ScheduledAlarm?) {
 }
 
 @Composable
-private fun AlarmRow(alarm: ScheduledAlarm) {
+private fun AlarmRow(alarm: ScheduledAlarm, modifier: Modifier = Modifier) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -474,12 +525,15 @@ private fun SettingsScreen(
     onAutomaticUpdates: (Boolean) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
+    onCustomAccentColor: (Int) -> Unit,
+    onBackgroundStyle: (BackgroundStyle) -> Unit,
     onCheckUpdates: () -> Unit,
     onSync: () -> Unit,
     onRequestCalendar: () -> Unit,
     onRequestExactAlarms: () -> Unit,
 ) {
     var showLeadDialog by rememberSaveable { mutableStateOf(false) }
+    var showColorDialog by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     if (showLeadDialog) {
@@ -492,6 +546,16 @@ private fun SettingsScreen(
             },
         )
     }
+    if (showColorDialog) {
+        ColorPickerDialog(
+            initialColor = state.settings.customAccentColor,
+            onDismiss = { showColorDialog = false },
+            onConfirm = {
+                onCustomAccentColor(it)
+                showColorDialog = false
+            },
+        )
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
@@ -499,7 +563,7 @@ private fun SettingsScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, tr("Назад")) }
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад")) }
                 Spacer(Modifier.width(4.dp))
                 Text(tr("Настройки"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             }
@@ -524,26 +588,42 @@ private fun SettingsScreen(
                         )
                     }
                 }
+                Text(tr("Фон"), fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BackgroundStyle.entries.forEach { style ->
+                        FilterChip(
+                            selected = state.settings.backgroundStyle == style,
+                            onClick = { onBackgroundStyle(style) },
+                            label = { Text(backgroundStyleName(style)) },
+                        )
+                    }
+                }
+                HorizontalDivider()
                 Text(tr("Основной цвет"), fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AccentTheme.entries.forEach { accent ->
+                    AccentTheme.entries.filterNot { it == AccentTheme.CUSTOM }.forEach { accent ->
                         FilterChip(
                             selected = state.settings.accentTheme == accent,
                             onClick = { onAccentTheme(accent) },
-                            label = {
-                                Text(
-                                    when (accent) {
-                                        AccentTheme.VIOLET -> tr("Фиолетовый")
-                                        AccentTheme.BLUE -> tr("Синий")
-                                        AccentTheme.GREEN -> tr("Зелёный")
-                                        AccentTheme.ORANGE -> tr("Оранжевый")
-                                        AccentTheme.ROSE -> tr("Розовый")
-                                        AccentTheme.TEAL -> tr("Бирюзовый")
-                                    },
+                            leadingIcon = {
+                                Box(
+                                    Modifier
+                                        .size(15.dp)
+                                        .background(accent.previewColor(), CircleShape),
                                 )
                             },
+                            label = { Text(accentName(accent)) },
                         )
                     }
+                }
+                OutlinedButton(onClick = { showColorDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier
+                            .size(18.dp)
+                            .background(Color(state.settings.customAccentColor), CircleShape),
+                    )
+                    Spacer(Modifier.width(9.dp))
+                    Text("${tr("Свой цвет")} · ${formatColorHex(state.settings.customAccentColor)}")
                 }
             }
         }
@@ -573,7 +653,15 @@ private fun SettingsScreen(
                     checked = state.settings.latestEventEnabled,
                     onChecked = onLatestEventEnabled,
                 )
-                AnimatedVisibility(state.settings.latestEventEnabled) {
+                AnimatedVisibility(
+                    visible = state.settings.latestEventEnabled,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                    ),
+                ) {
                     SettingsActionRow(
                         title = tr("Последнее допустимое время"),
                         subtitle = formatClockMinutes(state.settings.latestEventMinutes),
@@ -611,7 +699,15 @@ private fun SettingsScreen(
                     checked = state.settings.includeAllDayEvents,
                     onChecked = onIncludeAllDayEvents,
                 )
-                AnimatedVisibility(state.settings.includeAllDayEvents) {
+                AnimatedVisibility(
+                    visible = state.settings.includeAllDayEvents,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                    ),
+                ) {
                     SettingsActionRow(
                         title = tr("Условное время события"),
                         subtitle = formatClockMinutes(state.settings.allDayEventMinutes),
@@ -633,7 +729,15 @@ private fun SettingsScreen(
                     checked = state.settings.alarmSoundEnabled,
                     onChecked = onAlarmSoundEnabled,
                 )
-                AnimatedVisibility(state.settings.alarmSoundEnabled) {
+                AnimatedVisibility(
+                    visible = state.settings.alarmSoundEnabled,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                    ),
+                ) {
                     SettingsActionRow(
                         title = tr("Мелодия будильника"),
                         subtitle = tr(if (state.settings.alarmSoundUri.isBlank()) "Системная по умолчанию" else "Выбрана пользователем"),
@@ -740,17 +844,26 @@ private fun SettingsScreen(
                 SettingsActionRow(
                     title = tr("Ошибки и журнал"),
                     subtitle = when {
-                        state.lastError != null -> "Есть ошибка · нажмите, чтобы раскрыть"
-                        state.diagnostics?.readErrors?.isNotEmpty() == true -> "Есть ошибки чтения · нажмите, чтобы раскрыть"
+                        state.lastError != null -> tr("Есть ошибка · нажмите, чтобы раскрыть")
+                        state.diagnostics?.readErrors?.isNotEmpty() == true -> tr("Есть ошибки чтения · нажмите, чтобы раскрыть")
                         diagnosticsExpanded -> tr("Нажмите, чтобы скрыть")
                         else -> tr("Скрыто · нажмите, чтобы раскрыть")
                     },
                     onClick = { diagnosticsExpanded = !diagnosticsExpanded },
+                    expanded = diagnosticsExpanded,
                 )
-                AnimatedVisibility(diagnosticsExpanded) {
+                AnimatedVisibility(
+                    visible = diagnosticsExpanded,
+                    enter = fadeIn(tween(300)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .9f, stiffness = 330f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f),
+                    ),
+                ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         state.lastError?.let {
-                            Text("Ошибка приложения: $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            Text(tr("Ошибка приложения: %s", it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         }
                         state.diagnostics?.let { diagnostics ->
                             diagnostics.readErrors.forEach { error ->
@@ -761,27 +874,42 @@ private fun SettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Text("Календари Android", fontWeight = FontWeight.Bold)
-                            state.calendars.forEach { calendar ->
-                                val selected = state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds
-                                Text(
-                                    "${calendar.displayName}: ${if (selected) "выбран" else "выключен"}, sync=${calendar.syncEvents}, visible=${calendar.visible}, shared=${calendar.isShared}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (calendar.syncEvents) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                                )
+                            if (diagnostics.unsyncedCalendars > 0 || diagnostics.hiddenCalendars > 0) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text(
+                                        tr("Если у календаря «событий: 0», Android не сохранил его записи на телефоне. Включите синхронизацию и показ этого календаря в Google Calendar, затем нажмите «Проверить сейчас»."),
+                                        modifier = Modifier.padding(12.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
                             }
+                            Text(tr("Календари Android"), fontWeight = FontWeight.Bold)
+                            state.calendars
+                                .groupBy { calendar -> calendar.displayName.trim() to calendar.accountName.trim() }
+                                .values
+                                .forEach { calendars ->
+                                    CalendarDiagnosticGroup(
+                                        calendars = calendars,
+                                        selectedCalendarIds = state.settings.selectedCalendarIds,
+                                        eventCounts = diagnostics.calendarEventCounts,
+                                    )
+                                }
                             HorizontalDivider()
-                            Text("Что вернул Android", fontWeight = FontWeight.Bold)
+                            Text(tr("Android передал события"), fontWeight = FontWeight.Bold)
                             if (diagnostics.events.isEmpty()) {
                                 Text(
-                                    "Ни одной записи о событиях на ближайшие ${state.settings.lookAheadDays} дней.",
+                                    tr("Ни одной записи о событиях на ближайшие %d дней.", state.settings.lookAheadDays),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             } else {
                                 diagnostics.events.take(30).forEach { event -> DiagnosticEventRow(event) }
                             }
-                        } ?: Text("Сначала нажмите «Проверить сейчас»", style = MaterialTheme.typography.bodySmall)
+                        } ?: Text(tr("Сначала нажмите «Проверить сейчас»"), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Button(onClick = onSync, enabled = permissions.calendar && !state.syncing, modifier = Modifier.fillMaxWidth()) {
@@ -830,6 +958,62 @@ private fun SettingsScreen(
         }
         item { Spacer(Modifier.height(8.dp)) }
     }
+}
+
+@Composable
+private fun ColorPickerDialog(
+    initialColor: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    var hex by rememberSaveable(initialColor) { mutableStateOf(formatColorHex(initialColor)) }
+    val parsed = parseHexColor(hex)
+    val preview by animateColorAsState(
+        targetValue = Color(parsed ?: initialColor),
+        animationSpec = tween(420),
+        label = "customColorPreview",
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Собственный цвет")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(tr("Введите HEX-код цвета"), style = MaterialTheme.typography.bodyMedium)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(78.dp)
+                        .background(preview, RoundedCornerShape(22.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        parsed?.let(::formatColorHex) ?: tr("Например: #6558D3"),
+                        color = if (preview.luminance() > .5f) Color(0xFF17151D) else Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                OutlinedTextField(
+                    value = hex,
+                    onValueChange = { input ->
+                        val digits = input.filter { it.isDigit() || it.uppercaseChar() in 'A'..'F' }.take(6)
+                        hex = "#${digits.uppercase()}"
+                    },
+                    singleLine = true,
+                    isError = parsed == null,
+                    label = { Text("HEX") },
+                    supportingText = { if (parsed == null) Text(tr("Например: #6558D3")) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onConfirm) }, enabled = parsed != null) {
+                Text(tr("Применить"))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Отмена")) } },
+    )
 }
 
 @Composable
@@ -937,6 +1121,42 @@ private fun CalendarToggle(calendar: CalendarInfo, checked: Boolean, enabled: Bo
 }
 
 @Composable
+private fun CalendarDiagnosticGroup(
+    calendars: List<CalendarInfo>,
+    selectedCalendarIds: Set<Long>,
+    eventCounts: Map<Long, Int>,
+) {
+    val first = calendars.firstOrNull() ?: return
+    val selected = calendars.count { selectedCalendarIds.isEmpty() || it.id in selectedCalendarIds }
+    val active = calendars.count { it.syncEvents && it.visible }
+    val events = calendars.sumOf { eventCounts[it.id] ?: 0 }
+    val warning = events == 0 && calendars.any { !it.syncEvents || !it.visible }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            first.displayName,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (first.accountName.isNotBlank() && !first.displayName.equals(first.accountName, ignoreCase = true)) {
+            Text(
+                first.accountName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            tr("Копий: %d · выбрано: %d · активно: %d · событий: %d", calendars.size, selected, active, events),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (warning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (warning) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
 private fun DiagnosticEventRow(event: EventDiagnostic) {
     Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(event.title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -956,13 +1176,28 @@ private fun DiagnosticEventRow(event: EventDiagnostic) {
 }
 
 @Composable
-private fun SettingsActionRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun SettingsActionRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    expanded: Boolean? = null,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded == true) 90f else 0f,
+        animationSpec = spring(dampingRatio = .82f, stiffness = 390f),
+        label = "settingsArrow",
+    )
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Medium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
+        Icon(
+            Icons.Rounded.ChevronRight,
+            null,
+            tint = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.rotate(arrowRotation),
+        )
     }
 }
 
@@ -989,6 +1224,40 @@ private fun formatLead(minutes: Int): String {
     }.joinToString(" ")
 }
 
+private fun accentName(accent: AccentTheme): String = tr(
+    when (accent) {
+        AccentTheme.VIOLET -> "Фиолетовый"
+        AccentTheme.BLUE -> "Синий"
+        AccentTheme.GREEN -> "Зелёный"
+        AccentTheme.ORANGE -> "Оранжевый"
+        AccentTheme.ROSE -> "Розовый"
+        AccentTheme.TEAL -> "Бирюзовый"
+        AccentTheme.RED -> "Красный"
+        AccentTheme.AMBER -> "Янтарный"
+        AccentTheme.LIME -> "Лаймовый"
+        AccentTheme.CYAN -> "Голубой"
+        AccentTheme.INDIGO -> "Индиго"
+        AccentTheme.GRAPHITE -> "Графитовый"
+        AccentTheme.CUSTOM -> "Свой цвет"
+    },
+)
+
+private fun backgroundStyleName(style: BackgroundStyle): String = tr(
+    when (style) {
+        BackgroundStyle.STANDARD -> "Обычный"
+        BackgroundStyle.TINTED -> "С оттенком"
+        BackgroundStyle.AMOLED -> "Чёрный OLED"
+    },
+)
+
+private fun formatColorHex(color: Int): String = "#%06X".format(color and 0x00FFFFFF)
+
+private fun parseHexColor(value: String): Int? {
+    val digits = value.removePrefix("#")
+    if (digits.length != 6 || digits.any { !it.isDigit() && it.uppercaseChar() !in 'A'..'F' }) return null
+    return digits.toLongOrNull(16)?.toInt()?.or(0xFF000000.toInt())
+}
+
 private fun diagnosticsText(diagnostics: SyncDiagnostics?): String = when {
     diagnostics == null -> tr("Нажмите обновить, чтобы проверить события")
     diagnostics.totalInstances == 0 && diagnostics.unsyncedCalendars > 0 ->
@@ -1004,15 +1273,15 @@ private fun diagnosticsText(diagnostics: SyncDiagnostics?): String = when {
     else -> tr("Проверьте фильтры календарей, дней и времени в настройках")
 }
 
-private fun scanSummary(diagnostics: SyncDiagnostics): String = buildString {
-    append("Последняя проверка: найдено ${diagnostics.totalInstances}, подходящих по типу ${diagnostics.usableTimedEvents}")
-    append(". Instances: ${diagnostics.instanceRows}")
-    if (diagnostics.directEventRows > 0) append(", прямой запрос Events: ${diagnostics.directEventRows}")
-    if (diagnostics.unsyncedCalendars > 0) {
-        append(". Без синхронизации: ${diagnostics.unsyncedCalendars}")
-    }
-    if (diagnostics.hiddenCalendars > 0) append(". Скрыто: ${diagnostics.hiddenCalendars}")
-}
+private fun scanSummary(diagnostics: SyncDiagnostics): String = tr(
+    "Найдено: %d · подходящих: %d · Instances: %d · Events: %d · без синхронизации: %d · скрыто: %d",
+    diagnostics.totalInstances,
+    diagnostics.usableTimedEvents,
+    diagnostics.instanceRows,
+    diagnostics.directEventRows,
+    diagnostics.unsyncedCalendars,
+    diagnostics.hiddenCalendars,
+)
 
 private fun diagnosticDecision(event: EventDiagnostic): String {
     val decision = when (event.decision) {

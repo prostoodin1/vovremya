@@ -23,17 +23,35 @@ data class AppSettings(
     val automaticUpdates: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val accentTheme: AccentTheme = AccentTheme.VIOLET,
+    @param:ColorInt val customAccentColor: Int = 0xFF6558D3.toInt(),
+    val backgroundStyle: BackgroundStyle = BackgroundStyle.STANDARD,
 )
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-enum class AccentTheme { VIOLET, BLUE, GREEN, ORANGE, ROSE, TEAL }
+enum class AccentTheme {
+    VIOLET,
+    BLUE,
+    GREEN,
+    ORANGE,
+    ROSE,
+    TEAL,
+    RED,
+    AMBER,
+    LIME,
+    CYAN,
+    INDIGO,
+    GRAPHITE,
+    CUSTOM,
+}
+
+enum class BackgroundStyle { STANDARD, TINTED, AMOLED }
 
 data class CalendarInfo(
     val id: Long,
     val displayName: String,
     val accountName: String,
-    @ColorInt val color: Int,
+    @param:ColorInt val color: Int,
     val accountType: String = "",
     val syncEvents: Boolean = true,
     val visible: Boolean = true,
@@ -68,7 +86,7 @@ data class CalendarEvent(
     val location: String?,
     val calendarId: Long,
     val calendarName: String,
-    @ColorInt val calendarColor: Int,
+    @param:ColorInt val calendarColor: Int,
     val allDay: Boolean = false,
     val source: EventSource = EventSource.INSTANCES,
 )
@@ -92,7 +110,7 @@ data class ScheduledAlarm(
     val location: String?,
     val calendarId: Long,
     val calendarName: String,
-    @ColorInt val calendarColor: Int,
+    @param:ColorInt val calendarColor: Int,
     val allDay: Boolean = false,
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
@@ -135,6 +153,7 @@ data class SyncDiagnostics(
     val hiddenCalendars: Int = 0,
     val instanceRows: Int = 0,
     val directEventRows: Int = 0,
+    val calendarEventCounts: Map<Long, Int> = emptyMap(),
     val events: List<EventDiagnostic> = emptyList(),
     val readErrors: List<String> = emptyList(),
 )

@@ -7,6 +7,7 @@ import com.vovremya.alarm.BuildConfig
 import com.vovremya.alarm.VovremyaApplication
 import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.AccentTheme
+import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SyncDiagnostics
@@ -211,6 +212,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAccentTheme(theme: AccentTheme) {
         viewModelScope.launch { container.settingsStore.setAccentTheme(theme) }
+    }
+
+    fun setCustomAccentColor(color: Int) {
+        viewModelScope.launch { container.settingsStore.setCustomAccentColor(color) }
+    }
+
+    fun setBackgroundStyle(style: BackgroundStyle) {
+        viewModelScope.launch { container.settingsStore.setBackgroundStyle(style) }
     }
 
     fun checkForUpdates() {

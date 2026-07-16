@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import com.vovremya.alarm.MainActivity
 import com.vovremya.alarm.data.CalendarInfo
+import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.CalendarRepository
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SettingsStore
@@ -69,6 +70,7 @@ class AlarmScheduler(
                     hiddenCalendars = calendars.count { !it.visible },
                     instanceRows = scan.instanceRows,
                     directEventRows = scan.directEventRows,
+                    calendarEventCounts = scan.events.groupingBy(CalendarEvent::calendarId).eachCount(),
                     events = (scan.eventDiagnostics + selection.eventDiagnostics)
                         .sortedBy { it.startMillis }
                         .take(MAX_DIAGNOSTIC_EVENTS),

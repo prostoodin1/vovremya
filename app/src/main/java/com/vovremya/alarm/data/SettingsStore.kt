@@ -37,6 +37,8 @@ class SettingsStore(private val context: Context) {
         val automaticUpdates = booleanPreferencesKey("automatic_updates")
         val themeMode = stringPreferencesKey("theme_mode")
         val accentTheme = stringPreferencesKey("accent_theme")
+        val customAccentColor = intPreferencesKey("custom_accent_color")
+        val backgroundStyle = stringPreferencesKey("background_style")
         val scheduledAlarms = stringPreferencesKey("scheduled_alarms")
         val lastSyncMillis = longPreferencesKey("last_sync_millis")
     }
@@ -125,6 +127,15 @@ class SettingsStore(private val context: Context) {
         it[Keys.accentTheme] = value.name
     }
 
+    suspend fun setCustomAccentColor(@androidx.annotation.ColorInt value: Int) = context.vovremyaDataStore.edit {
+        it[Keys.customAccentColor] = value or 0xFF000000.toInt()
+        it[Keys.accentTheme] = AccentTheme.CUSTOM.name
+    }
+
+    suspend fun setBackgroundStyle(value: BackgroundStyle) = context.vovremyaDataStore.edit {
+        it[Keys.backgroundStyle] = value.name
+    }
+
     suspend fun saveScheduledAlarms(alarms: List<ScheduledAlarm>) = context.vovremyaDataStore.edit {
         it[Keys.scheduledAlarms] = encodeAlarms(alarms)
         it[Keys.lastSyncMillis] = System.currentTimeMillis()
@@ -165,6 +176,10 @@ class SettingsStore(private val context: Context) {
             accentTheme = preferences[Keys.accentTheme]
                 ?.let { stored -> AccentTheme.entries.firstOrNull { it.name == stored } }
                 ?: AccentTheme.VIOLET,
+            customAccentColor = preferences[Keys.customAccentColor] ?: 0xFF6558D3.toInt(),
+            backgroundStyle = preferences[Keys.backgroundStyle]
+                ?.let { stored -> BackgroundStyle.entries.firstOrNull { it.name == stored } }
+                ?: BackgroundStyle.STANDARD,
         )
     }
 

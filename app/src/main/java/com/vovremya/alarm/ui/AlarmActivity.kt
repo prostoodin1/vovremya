@@ -95,7 +95,12 @@ class AlarmActivity : ComponentActivity() {
         setContent {
             val settings by (application as VovremyaApplication).container.settingsStore.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
-            VovremyaTheme(accentTheme = settings.accentTheme, darkTheme = true) {
+            VovremyaTheme(
+                accentTheme = settings.accentTheme,
+                customAccentColor = settings.customAccentColor,
+                backgroundStyle = settings.backgroundStyle,
+                darkTheme = true,
+            ) {
                 AlarmScreen(
                     title = title,
                     eventStartMillis = eventStart,

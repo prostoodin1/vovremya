@@ -42,4 +42,25 @@ class LocalizationTest {
 
         assertEquals("Settings", tr("Настройки"))
     }
+
+    @Test
+    fun `new appearance and diagnostics strings are translated`() {
+        Locale.setDefault(Locale.ENGLISH)
+
+        assertEquals("Custom color", tr("Свой цвет"))
+        assertEquals("OLED black", tr("Чёрный OLED"))
+        assertEquals("Events returned by Android", tr("Android передал события"))
+        assertEquals(
+            "Found: 3 · matching: 2 · Instances: 3 · Events: 1 · sync off: 1 · hidden: 1",
+            tr(
+                "Найдено: %d · подходящих: %d · Instances: %d · Events: %d · без синхронизации: %d · скрыто: %d",
+                3,
+                2,
+                3,
+                1,
+                1,
+                1,
+            ),
+        )
+    }
 }
