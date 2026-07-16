@@ -113,7 +113,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         selectedCalendarIds = state.value.settings.selectedCalendarIds,
                     )
                     remoteSyncRequested = repairResult.requestedAccounts > 0
-                    if (remoteSyncRequested) delay(4_000) else if (repairResult.updatedCalendars > 0) delay(400)
+                    if (remoteSyncRequested) delay(6_000) else if (repairResult.updatedCalendars > 0) delay(400)
                     calendars.value = container.calendarRepository.getCalendars()
                 }
                 container.alarmScheduler.syncFromCalendar()
@@ -140,7 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             syncing.value = false
             if (scheduleFollowUp && remoteSyncRequested) {
-                delay(8_000)
+                delay(12_000)
                 runSync(showMessage = false, requestRemoteSync = false, scheduleFollowUp = false)
             }
         }

@@ -98,6 +98,9 @@ class CalendarRepository(private val context: Context) {
         val requested = accounts.count { (name, type) ->
             val account = Account(name, type)
             runCatching {
+                if (ContentResolver.getIsSyncable(account, CalendarContract.AUTHORITY) <= 0) {
+                    ContentResolver.setIsSyncable(account, CalendarContract.AUTHORITY, 1)
+                }
                 if (!ContentResolver.getSyncAutomatically(account, CalendarContract.AUTHORITY)) {
                     ContentResolver.setSyncAutomatically(account, CalendarContract.AUTHORITY, true)
                 }
@@ -105,6 +108,17 @@ class CalendarRepository(private val context: Context) {
             runCatching {
                 ContentResolver.requestSync(account, CalendarContract.AUTHORITY, manualSyncExtras())
             }.isSuccess
+        }
+        if (accounts.isNotEmpty()) {
+            // On some OEM/Google Calendar Provider versions a shared calendar
+            // exposes the remote owner's address as ACCOUNT_NAME. That account
+            // is not necessarily registered on the phone, so the targeted
+            // request can be accepted without running a sync adapter. A null
+            // account asks Android to run the Calendar authority for every
+            // locally registered account and covers that provider variant.
+            runCatching {
+                ContentResolver.requestSync(null, CalendarContract.AUTHORITY, manualSyncExtras())
+            }
         }
         return CalendarSyncRepairResult(
             targetedCalendars = targeted.size,
@@ -142,7 +156,6 @@ class CalendarRepository(private val context: Context) {
     private fun manualSyncExtras() = Bundle().apply {
         putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
         putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
-        putBoolean(ContentResolver.SYNC_EXTRAS_DO_NOT_RETRY, true)
     }
 
     fun calendarChanges(): Flow<Unit> = callbackFlow {

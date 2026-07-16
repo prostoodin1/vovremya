@@ -21,7 +21,7 @@ class DailySyncWorker(
                     calendars = calendars,
                     selectedCalendarIds = settings.selectedCalendarIds,
                 )
-                if (repair.requestedAccounts > 0) delay(4_000)
+                if (repair.requestedAccounts > 0) delay(12_000)
                 val sync = container.alarmScheduler.syncFromCalendar()
                 container.notificationHelper.showPlanningSummary(sync)
             }.isFailure

@@ -1,7 +1,9 @@
 package com.vovremya.alarm.data
 
 import android.Manifest
+import android.accounts.Account
 import android.content.ContentProvider
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
@@ -35,6 +37,8 @@ class CalendarRepositoryTest {
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
             Manifest.permission.READ_CALENDAR,
             Manifest.permission.WRITE_CALENDAR,
+            Manifest.permission.READ_SYNC_SETTINGS,
+            Manifest.permission.WRITE_SYNC_SETTINGS,
         )
         ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, FakeCalendarProvider(eventStart))
     }
@@ -133,10 +137,66 @@ class CalendarRepositoryTest {
         assertEquals(1, provider.calendarUpdates.size)
     }
 
+    @Test
+    fun `reads metadata and events from a calendar shared by another owner`() = runBlocking {
+        val provider = FakeCalendarProvider(eventStart, includeSharedCalendarRow = true)
+        ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, provider)
+        val repository = CalendarRepository(RuntimeEnvironment.getApplication())
+
+        val calendar = repository.getCalendars().single()
+        val result = repository.scanUpcomingEvents(eventStart - 24 * 60 * 60_000L)
+
+        assertTrue(calendar.isShared)
+        assertEquals("owner@example.com", calendar.ownerAccount)
+        assertEquals(7L, result.events.single().calendarId)
+        assertEquals(1, result.directEventRows)
+    }
+
+    @Test
+    fun `repairs a disabled shared duplicate and enables account syncability`() {
+        val provider = FakeCalendarProvider(eventStart)
+        ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, provider)
+        val accountName = "shared-test-user@gmail.com"
+        val accountType = "com.google"
+        val calendars = listOf(
+            CalendarInfo(
+                id = 7L,
+                displayName = "Shared team",
+                accountName = accountName,
+                color = 0xFF6558D3.toInt(),
+                accountType = accountType,
+                syncEvents = true,
+                visible = true,
+                ownerAccount = "owner@example.com",
+            ),
+            CalendarInfo(
+                id = 8L,
+                displayName = "Shared team",
+                accountName = accountName,
+                color = 0xFF6558D3.toInt(),
+                accountType = accountType,
+                syncEvents = false,
+                visible = false,
+                ownerAccount = "owner@example.com",
+            ),
+        )
+
+        val result = CalendarRepository(RuntimeEnvironment.getApplication())
+            .repairAndRequestCalendarSync(calendars)
+        val account = Account(accountName, accountType)
+
+        assertEquals(1, result.updatedCalendars)
+        assertEquals(1, result.requestedAccounts)
+        assertEquals(1, provider.calendarUpdates.size)
+        assertEquals(1, ContentResolver.getIsSyncable(account, CalendarContract.AUTHORITY))
+        assertTrue(ContentResolver.getSyncAutomatically(account, CalendarContract.AUTHORITY))
+    }
+
     private class FakeCalendarProvider(
         private val eventStart: Long,
         private val includeInstance: Boolean = false,
         private val rejectRichEventProjection: Boolean = false,
+        private val includeSharedCalendarRow: Boolean = false,
     ) : ContentProvider() {
         var attendeeColumnRequested: Boolean = false
             private set
@@ -171,6 +231,21 @@ class CalendarRepositoryTest {
                 Array(source.size) { index -> source[index] }
             } ?: emptyArray()
             val cursor = MatrixCursor(columns)
+            if (uri.pathSegments.firstOrNull() == "calendars" && includeSharedCalendarRow) {
+                val values = mapOf<String, Any?>(
+                    CalendarContract.Calendars._ID to 7L,
+                    CalendarContract.Calendars.CALENDAR_DISPLAY_NAME to "Shared team",
+                    CalendarContract.Calendars.ACCOUNT_NAME to "shared-test-user@gmail.com",
+                    CalendarContract.Calendars.CALENDAR_COLOR to 0xFF6558D3.toInt(),
+                    CalendarContract.Calendars.ACCOUNT_TYPE to "com.google",
+                    CalendarContract.Calendars.SYNC_EVENTS to 1,
+                    CalendarContract.Calendars.VISIBLE to 1,
+                    CalendarContract.Calendars.OWNER_ACCOUNT to "owner@example.com",
+                    CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL to CalendarContract.Calendars.CAL_ACCESS_EDITOR,
+                    CalendarContract.Calendars.IS_PRIMARY to 0,
+                )
+                cursor.addRow(columns.map { column -> values[column] })
+            }
             if (uri.pathSegments.firstOrNull() == "instances" && includeInstance) {
                 val values = mapOf<String, Any?>(
                     CalendarContract.Instances.EVENT_ID to 99L,
