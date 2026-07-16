@@ -137,6 +137,14 @@ data class CalendarScanResult(
     val readErrors: List<String> = emptyList(),
 )
 
+data class CalendarSyncRepairResult(
+    val targetedCalendars: Int = 0,
+    val updatedCalendars: Int = 0,
+    val failedCalendars: Int = 0,
+    val requestedAccounts: Int = 0,
+    val writePermissionMissing: Boolean = false,
+)
+
 data class SyncDiagnostics(
     val lookAheadDays: Int = 21,
     val totalInstances: Int = 0,

@@ -50,6 +50,8 @@ class LocalizationTest {
         assertEquals("Custom color", tr("Свой цвет"))
         assertEquals("OLED black", tr("Чёрный OLED"))
         assertEquals("Events returned by Android", tr("Android передал события"))
+        assertEquals("Repair and sync", tr("Исправить и синхронизировать"))
+        assertEquals("Allow calendar management", tr("Разрешить управление календарями"))
         assertEquals(
             "Found: 3 · matching: 2 · Instances: 3 · Events: 1 · sync off: 1 · hidden: 1",
             tr(

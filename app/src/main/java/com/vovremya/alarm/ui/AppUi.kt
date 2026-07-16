@@ -132,11 +132,12 @@ import kotlinx.coroutines.launch
 
 data class PermissionState(
     val calendar: Boolean,
+    val calendarWrite: Boolean,
     val notifications: Boolean,
     val exactAlarms: Boolean,
     val fullScreen: Boolean,
 ) {
-    val allGranted: Boolean get() = calendar && notifications && exactAlarms && fullScreen
+    val allGranted: Boolean get() = calendar && calendarWrite && notifications && exactAlarms && fullScreen
 }
 
 private enum class Screen { Home, Settings }
@@ -377,7 +378,11 @@ private fun PermissionCard(
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f),
             )
             Spacer(Modifier.height(4.dp))
-            PermissionRow(tr("Доступ к календарю"), permissions.calendar, onCalendar)
+            PermissionRow(
+                tr("Доступ и синхронизация календаря"),
+                permissions.calendar && permissions.calendarWrite,
+                onCalendar,
+            )
             PermissionRow(tr("Уведомления"), permissions.notifications, onNotifications)
             PermissionRow(tr("Точное время сигнала"), permissions.exactAlarms, onExact)
             PermissionRow(tr("Экран будильника"), permissions.fullScreen, onFullScreen)
@@ -536,6 +541,10 @@ private fun SettingsScreen(
     var showColorDialog by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
+    val selectedCalendars = state.calendars.filter { calendar ->
+        state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds
+    }
+    val repairCandidates = selectedCalendars.filter { !it.syncEvents }
     if (showLeadDialog) {
         LeadTimeDialog(
             initialMinutes = state.settings.leadMinutes,
@@ -787,19 +796,37 @@ private fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    if (state.calendars.any { !it.syncEvents }) {
-                        Text(
-                            tr("У календарей без синхронизации Android может не хранить события. Включите их синхронизацию в Google Calendar; уже загруженные записи приложение проверит напрямую."),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (state.calendars.any { !it.visible }) {
-                        Text(
-                            tr("Скрытые календари тоже проверяются напрямую, но повторяющиеся события надёжнее читать после включения показа календаря."),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                    if (repairCandidates.isNotEmpty() || !permissions.calendarWrite) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    tr("Приложение может включить выбранные календари и запросить их синхронизацию у Android."),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                FilledTonalButton(
+                                    onClick = if (permissions.calendarWrite) onSync else onRequestCalendar,
+                                    enabled = !state.syncing,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    if (state.syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Rounded.Refresh, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        tr(
+                                            if (permissions.calendarWrite) "Исправить и синхронизировать"
+                                            else "Разрешить управление календарями",
+                                        ),
+                                    )
+                                }
+                            }
+                        }
                     }
                     FilledTonalButton(onClick = onSelectAllCalendars, modifier = Modifier.fillMaxWidth()) {
                         Text(tr(if (state.settings.selectedCalendarIds.isEmpty()) "Все календари уже выбраны" else "Выбрать все календари"))
@@ -874,17 +901,33 @@ private fun SettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (diagnostics.unsyncedCalendars > 0 || diagnostics.hiddenCalendars > 0) {
+                            if (repairCandidates.isNotEmpty()) {
                                 Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     shape = RoundedCornerShape(16.dp),
                                 ) {
-                                    Text(
-                                        tr("Если у календаря «событий: 0», Android не сохранил его записи на телефоне. Включите синхронизацию и показ этого календаря в Google Calendar, затем нажмите «Проверить сейчас»."),
+                                    Column(
                                         modifier = Modifier.padding(12.dp),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            tr("Если у календаря «событий: 0», Android не сохранил его записи. Нажмите кнопку ниже — приложение включит календарь и запросит синхронизацию."),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        FilledTonalButton(
+                                            onClick = if (permissions.calendarWrite) onSync else onRequestCalendar,
+                                            enabled = !state.syncing,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text(
+                                                tr(
+                                                    if (permissions.calendarWrite) "Исправить и синхронизировать"
+                                                    else "Разрешить управление календарями",
+                                                ),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             Text(tr("Календари Android"), fontWeight = FontWeight.Bold)
@@ -1107,7 +1150,7 @@ private fun CalendarToggle(calendar: CalendarInfo, checked: Boolean, enabled: Bo
                     else -> calendar.accountName
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (calendar.syncEvents && calendar.visible) {
+                color = if (calendar.syncEvents) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
                     MaterialTheme.colorScheme.error
@@ -1128,9 +1171,13 @@ private fun CalendarDiagnosticGroup(
 ) {
     val first = calendars.firstOrNull() ?: return
     val selected = calendars.count { selectedCalendarIds.isEmpty() || it.id in selectedCalendarIds }
-    val active = calendars.count { it.syncEvents && it.visible }
+    val synced = calendars.count {
+        (selectedCalendarIds.isEmpty() || it.id in selectedCalendarIds) && it.syncEvents
+    }
     val events = calendars.sumOf { eventCounts[it.id] ?: 0 }
-    val warning = events == 0 && calendars.any { !it.syncEvents || !it.visible }
+    val warning = events == 0 && calendars.any {
+        (selectedCalendarIds.isEmpty() || it.id in selectedCalendarIds) && !it.syncEvents
+    }
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -1148,7 +1195,7 @@ private fun CalendarDiagnosticGroup(
             )
         }
         Text(
-            tr("Копий: %d · выбрано: %d · активно: %d · событий: %d", calendars.size, selected, active, events),
+            tr("Копий: %d · выбрано: %d · синхр.: %d · событий: %d", calendars.size, selected, synced, events),
             style = MaterialTheme.typography.bodySmall,
             color = if (warning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (warning) FontWeight.SemiBold else FontWeight.Normal,
@@ -1262,8 +1309,6 @@ private fun diagnosticsText(diagnostics: SyncDiagnostics?): String = when {
     diagnostics == null -> tr("Нажмите обновить, чтобы проверить события")
     diagnostics.totalInstances == 0 && diagnostics.unsyncedCalendars > 0 ->
         tr("Android не вернул событий. Проверьте календари с выключенной синхронизацией в настройках")
-    diagnostics.totalInstances == 0 && diagnostics.hiddenCalendars > 0 ->
-        tr("Android не вернул событий. Проверьте скрытые календари в настройках")
     diagnostics.totalInstances == 0 -> tr("Android не вернул событий на ближайшие %d дней", diagnostics.lookAheadDays)
     diagnostics.excludedAllDay == diagnostics.totalInstances -> tr("Найдены только события на весь день")
     diagnostics.excludedCalendar > 0 -> tr("События есть, но их календари отключены в настройках")

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.vovremya.alarm.VovremyaApplication
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 class DailySyncWorker(
@@ -15,6 +16,12 @@ class DailySyncWorker(
         val settings = container.settingsStore.settings.first()
         val calendarSyncFailed = if (container.calendarRepository.hasPermission()) {
             runCatching {
+                val calendars = container.calendarRepository.getCalendars()
+                val repair = container.calendarRepository.repairAndRequestCalendarSync(
+                    calendars = calendars,
+                    selectedCalendarIds = settings.selectedCalendarIds,
+                )
+                if (repair.requestedAccounts > 0) delay(4_000)
                 val sync = container.alarmScheduler.syncFromCalendar()
                 container.notificationHelper.showPlanningSummary(sync)
             }.isFailure

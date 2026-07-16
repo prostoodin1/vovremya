@@ -7,6 +7,8 @@ Provider, находит события во всех выбранных кал�
 ## Что уже реализовано
 
 - чтение Google, локальных и общих календарей через системный Calendar Provider;
+- автоматическое восстановление `sync_events` у выбранных календарей и ручной
+  expedited-запрос синхронизации Android перед чтением событий;
 - режим всех событий за день или только самого раннего;
 - настраиваемое время ежедневной автоматической проверки и уведомление с результатом;
 - точный системный будильник с настраиваемыми звуком, вибрацией, мелодией,
@@ -53,7 +55,7 @@ Debug APK появится в app/build/outputs/apk/debug/app-debug.apk.
     githubRepository=owner/repository
 
 Приложение обращается только к публичному endpoint последнего GitHub Release,
-сравнивает versionName с тегом вида v1.3.0, скачивает первый APK asset и
+сравнивает versionName с тегом вида v1.3.1, скачивает первый APK asset и
 показывает уведомление для установки.
 
 Android не разрешает обычному приложению устанавливать APK полностью молча.
@@ -72,7 +74,7 @@ Workflow .github/workflows/android-release.yml запускается для т�
 - RELEASE_KEY_PASSWORD.
 
 Затем увеличьте versionCode и versionName в app/build.gradle.kts и отправьте
-тег, например v1.3.0. Workflow прогонит тесты/lint, подпишет APK и добавит его к
+тег, например v1.3.1. Workflow прогонит тесты/lint, подпишет APK и добавит его к
 GitHub Release.
 
 Локально можно скопировать keystore.properties.example в keystore.properties и

@@ -4,6 +4,7 @@ import android.Manifest
 import android.accounts.Account
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.ContentObserver
@@ -26,6 +27,11 @@ class CalendarRepository(private val context: Context) {
     fun hasPermission(): Boolean = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.READ_CALENDAR,
+    ) == PackageManager.PERMISSION_GRANTED
+
+    fun hasWritePermission(): Boolean = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.WRITE_CALENDAR,
     ) == PackageManager.PERMISSION_GRANTED
 
     suspend fun getCalendars(): List<CalendarInfo> = withContext(Dispatchers.IO) {
@@ -64,26 +70,79 @@ class CalendarRepository(private val context: Context) {
         buildScanResult(instances + directOnly, instances.size, directOnly.size, errors)
     }
 
-    fun requestCalendarSync(calendars: List<CalendarInfo>): Int {
-        val accounts = calendars.asSequence()
+    fun repairAndRequestCalendarSync(
+        calendars: List<CalendarInfo>,
+        selectedCalendarIds: Set<Long> = emptySet(),
+    ): CalendarSyncRepairResult {
+        val targeted = calendars.filter { calendar ->
+            selectedCalendarIds.isEmpty() || calendar.id in selectedCalendarIds
+        }
+        val needsRepair = targeted.filter { !it.syncEvents }
+        val canWrite = hasWritePermission()
+        var updated = 0
+        var failed = 0
+        if (canWrite) {
+            needsRepair.forEach { calendar ->
+                if (repairCalendar(calendar)) updated++ else failed++
+            }
+        } else {
+            failed = needsRepair.size
+        }
+
+        val accounts = targeted.asSequence()
             .filter { it.accountName.isNotBlank() && it.accountType.isNotBlank() }
             .filterNot { it.accountType.equals("LOCAL", ignoreCase = true) }
             .map { it.accountName to it.accountType }
             .distinct()
             .toList()
-        return accounts.count { (name, type) ->
+        val requested = accounts.count { (name, type) ->
+            val account = Account(name, type)
             runCatching {
-                ContentResolver.requestSync(
-                    Account(name, type),
-                    CalendarContract.AUTHORITY,
-                    Bundle().apply {
-                        putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
-                        putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
-                        putBoolean(ContentResolver.SYNC_EXTRAS_DO_NOT_RETRY, true)
-                    },
-                )
+                if (!ContentResolver.getSyncAutomatically(account, CalendarContract.AUTHORITY)) {
+                    ContentResolver.setSyncAutomatically(account, CalendarContract.AUTHORITY, true)
+                }
+            }
+            runCatching {
+                ContentResolver.requestSync(account, CalendarContract.AUTHORITY, manualSyncExtras())
             }.isSuccess
         }
+        return CalendarSyncRepairResult(
+            targetedCalendars = targeted.size,
+            updatedCalendars = updated,
+            failedCalendars = failed,
+            requestedAccounts = requested,
+            writePermissionMissing = needsRepair.isNotEmpty() && !canWrite,
+        )
+    }
+
+    private fun repairCalendar(calendar: CalendarInfo): Boolean {
+        val values = ContentValues().apply {
+            if (!calendar.syncEvents) put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+        }
+        if (values.size() == 0) return true
+        val itemUri = ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendar.id)
+        val regularUpdate = runCatching {
+            context.contentResolver.update(itemUri, values, null, null)
+        }.getOrDefault(0)
+        if (regularUpdate > 0) return true
+
+        // Some Calendar Provider implementations only accept calendar-level
+        // sync flags when the account is supplied on a sync-adapter URI.
+        if (calendar.accountName.isBlank() || calendar.accountType.isBlank()) return false
+        val syncAdapterUri = itemUri.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, calendar.accountName)
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, calendar.accountType)
+            .build()
+        return runCatching {
+            context.contentResolver.update(syncAdapterUri, values, null, null) > 0
+        }.getOrDefault(false)
+    }
+
+    private fun manualSyncExtras() = Bundle().apply {
+        putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
+        putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+        putBoolean(ContentResolver.SYNC_EXTRAS_DO_NOT_RETRY, true)
     }
 
     fun calendarChanges(): Flow<Unit> = callbackFlow {

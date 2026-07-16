@@ -45,6 +45,9 @@ class AlarmScheduler(
                 settingsStore.setSelectedCalendarIds(normalizedCalendarIds)
             }
             val settings = storedSettings.copy(selectedCalendarIds = normalizedCalendarIds)
+            val selectedCalendars = calendars.filter { calendar ->
+                normalizedCalendarIds.isEmpty() || calendar.id in normalizedCalendarIds
+            }
             val selection = EventSelector.select(scan.events, settings, nowMillis)
             val newAlarms = selection.alarms
 
@@ -66,8 +69,8 @@ class AlarmScheduler(
                     excludedCutoff = selection.excludedCutoff,
                     excludedPastAlarm = selection.excludedPastAlarm,
                     extraSameDay = selection.extraSameDay,
-                    unsyncedCalendars = calendars.count { !it.syncEvents },
-                    hiddenCalendars = calendars.count { !it.visible },
+                    unsyncedCalendars = selectedCalendars.count { !it.syncEvents },
+                    hiddenCalendars = selectedCalendars.count { !it.visible },
                     instanceRows = scan.instanceRows,
                     directEventRows = scan.directEventRows,
                     calendarEventCounts = scan.events.groupingBy(CalendarEvent::calendarId).eachCount(),

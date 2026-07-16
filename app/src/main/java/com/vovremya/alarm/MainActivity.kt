@@ -32,8 +32,13 @@ import com.vovremya.alarm.ui.theme.VovremyaTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
-    private val calendarPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) viewModel.onCalendarPermissionAvailable()
+    private val calendarPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants[Manifest.permission.READ_CALENDAR] == true || readPermissions().calendar) {
+            viewModel.onCalendarPermissionAvailable()
+            if (grants[Manifest.permission.WRITE_CALENDAR] == true || readPermissions().calendarWrite) {
+                viewModel.syncNow()
+            }
+        }
     }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val alarmSoundPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -75,7 +80,7 @@ class MainActivity : ComponentActivity() {
                 MainApp(
                     state = state,
                     permissions = permissions,
-                    onRequestCalendar = { calendarPermission.launch(Manifest.permission.READ_CALENDAR) },
+                    onRequestCalendar = ::requestCalendarPermissions,
                     onRequestNotifications = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -101,7 +106,10 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
-                    onSync = viewModel::syncNow,
+                    onSync = {
+                        if (permissions.calendarWrite) viewModel.syncNow()
+                        else requestCalendarPermissions()
+                    },
                     onLeadMinutes = viewModel::setLeadMinutes,
                     onLatestEventMinutes = viewModel::setLatestEventMinutes,
                     onLatestEventEnabled = viewModel::setLatestEventEnabled,
@@ -143,10 +151,23 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun requestCalendarPermissions() {
+        calendarPermissions.launch(
+            arrayOf(
+                Manifest.permission.READ_CALENDAR,
+                Manifest.permission.WRITE_CALENDAR,
+            ),
+        )
+    }
+
     private fun readPermissions(): PermissionState {
         val calendar = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.READ_CALENDAR,
+        ) == PackageManager.PERMISSION_GRANTED
+        val calendarWrite = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.WRITE_CALENDAR,
         ) == PackageManager.PERMISSION_GRANTED
         val notifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -154,6 +175,6 @@ class MainActivity : ComponentActivity() {
             getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
         val fullScreen = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
-        return PermissionState(calendar, notifications, exact, fullScreen)
+        return PermissionState(calendar, calendarWrite, notifications, exact, fullScreen)
     }
 }

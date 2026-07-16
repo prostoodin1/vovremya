@@ -9,6 +9,7 @@ import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.AccentTheme
 import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.CalendarInfo
+import com.vovremya.alarm.data.CalendarSyncRepairResult
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.SyncResult
@@ -45,6 +46,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val lastError = MutableStateFlow<String?>(null)
     private val diagnostics = MutableStateFlow<SyncDiagnostics?>(null)
     private var calendarObserverJob: Job? = null
+    private var initialRemoteSyncRequested = false
 
     val state = combine(
         container.settingsStore.settings,
@@ -76,7 +78,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        syncNow(showMessage = false)
+        val requestRemoteSync = !initialRemoteSyncRequested && container.calendarRepository.hasWritePermission()
+        initialRemoteSyncRequested = initialRemoteSyncRequested || requestRemoteSync
+        runSync(
+            showMessage = false,
+            requestRemoteSync = requestRemoteSync,
+            scheduleFollowUp = requestRemoteSync,
+        )
     }
 
     fun syncNow(showMessage: Boolean = true) {
@@ -96,18 +104,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             syncing.value = true
             var remoteSyncRequested = false
+            var repairResult = CalendarSyncRepairResult()
             runCatching {
                 calendars.value = container.calendarRepository.getCalendars()
                 if (requestRemoteSync) {
-                    remoteSyncRequested = container.calendarRepository.requestCalendarSync(calendars.value) > 0
-                    if (remoteSyncRequested) delay(1_500)
+                    repairResult = container.calendarRepository.repairAndRequestCalendarSync(
+                        calendars = calendars.value,
+                        selectedCalendarIds = state.value.settings.selectedCalendarIds,
+                    )
+                    remoteSyncRequested = repairResult.requestedAccounts > 0
+                    if (remoteSyncRequested) delay(4_000) else if (repairResult.updatedCalendars > 0) delay(400)
+                    calendars.value = container.calendarRepository.getCalendars()
                 }
                 container.alarmScheduler.syncFromCalendar()
             }
                 .onSuccess { result ->
                     diagnostics.value = result.diagnostics
                     lastError.value = null
-                    if (showMessage) message.value = syncMessage(result)
+                    if (showMessage) {
+                        message.value = when {
+                            repairResult.writePermissionMissing -> tr("Разрешите управление календарями для восстановления синхронизации")
+                            repairResult.failedCalendars > 0 -> tr("Android не разрешил включить календарей: %d", repairResult.failedCalendars)
+                            repairResult.updatedCalendars > 0 -> tr(
+                                "Синхронизация восстановлена для календарей: %d. Найдено событий: %d",
+                                repairResult.updatedCalendars,
+                                result.diagnostics.usableTimedEvents,
+                            )
+                            else -> syncMessage(result)
+                        }
+                    }
                 }
                 .onFailure {
                     lastError.value = "${it::class.java.simpleName}: ${it.message.orEmpty().take(180)}"
@@ -115,7 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             syncing.value = false
             if (scheduleFollowUp && remoteSyncRequested) {
-                delay(4_000)
+                delay(8_000)
                 runSync(showMessage = false, requestRemoteSync = false, scheduleFollowUp = false)
             }
         }
@@ -257,8 +282,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tr("Будильников: %d; разрешите точное время", result.alarms.size)
             d.totalInstances == 0 && d.unsyncedCalendars > 0 ->
                 tr("Событий не найдено. У %d календарей выключена синхронизация", d.unsyncedCalendars)
-            d.totalInstances == 0 && d.hiddenCalendars > 0 ->
-                "Событий не найдено. ${d.hiddenCalendars} календарей скрыто в приложении календаря"
             d.totalInstances == 0 ->
                 tr("В ближайшие %d дней календарь не вернул событий", d.lookAheadDays)
             d.excludedAllDay == d.totalInstances ->

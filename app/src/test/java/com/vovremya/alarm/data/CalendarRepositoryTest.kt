@@ -32,7 +32,10 @@ class CalendarRepositoryTest {
 
     @Before
     fun setUp() {
-        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.READ_CALENDAR)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.READ_CALENDAR,
+            Manifest.permission.WRITE_CALENDAR,
+        )
         ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, FakeCalendarProvider(eventStart))
     }
 
@@ -80,6 +83,56 @@ class CalendarRepositoryTest {
         assertFalse(provider.attendeeColumnRequested)
     }
 
+    @Test
+    fun `repairs sync without changing calendar visibility`() {
+        val provider = FakeCalendarProvider(eventStart)
+        ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, provider)
+        val calendar = CalendarInfo(
+            id = 2L,
+            displayName = "My calendar",
+            accountName = "local",
+            color = 0xFF6558D3.toInt(),
+            accountType = "LOCAL",
+            syncEvents = false,
+            visible = false,
+        )
+
+        val result = CalendarRepository(RuntimeEnvironment.getApplication())
+            .repairAndRequestCalendarSync(listOf(calendar))
+
+        assertEquals(1, result.targetedCalendars)
+        assertEquals(1, result.updatedCalendars)
+        assertEquals(0, result.failedCalendars)
+        assertEquals(0, result.requestedAccounts)
+        assertEquals(1, provider.calendarUpdates.size)
+        assertEquals(1, provider.calendarUpdates.single().getAsInteger(CalendarContract.Calendars.SYNC_EVENTS))
+        assertFalse(provider.calendarUpdates.single().containsKey(CalendarContract.Calendars.VISIBLE))
+    }
+
+    @Test
+    fun `repairs only explicitly selected calendars`() {
+        val provider = FakeCalendarProvider(eventStart)
+        ShadowContentResolver.registerProviderInternal(CalendarContract.AUTHORITY, provider)
+        val calendars = listOf(2L, 3L).map { id ->
+            CalendarInfo(
+                id = id,
+                displayName = "Calendar $id",
+                accountName = "local",
+                color = 0xFF6558D3.toInt(),
+                accountType = "LOCAL",
+                syncEvents = false,
+                visible = false,
+            )
+        }
+
+        val result = CalendarRepository(RuntimeEnvironment.getApplication())
+            .repairAndRequestCalendarSync(calendars, selectedCalendarIds = setOf(3L))
+
+        assertEquals(1, result.targetedCalendars)
+        assertEquals(1, result.updatedCalendars)
+        assertEquals(1, provider.calendarUpdates.size)
+    }
+
     private class FakeCalendarProvider(
         private val eventStart: Long,
         private val includeInstance: Boolean = false,
@@ -87,6 +140,7 @@ class CalendarRepositoryTest {
     ) : ContentProvider() {
         var attendeeColumnRequested: Boolean = false
             private set
+        val calendarUpdates = mutableListOf<ContentValues>()
 
         override fun onCreate(): Boolean = true
 
@@ -154,6 +208,10 @@ class CalendarRepositoryTest {
         override fun getType(uri: Uri): String? = null
         override fun insert(uri: Uri, values: ContentValues?): Uri? = null
         override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
-        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
+        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int {
+            if (uri.pathSegments.firstOrNull() != "calendars" || values == null) return 0
+            calendarUpdates += ContentValues(values)
+            return 1
+        }
     }
 }
