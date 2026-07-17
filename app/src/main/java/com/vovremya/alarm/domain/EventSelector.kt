@@ -17,6 +17,7 @@ object EventSelector {
         val excludedDay: Int,
         val excludedCutoff: Int,
         val excludedPastAlarm: Int,
+        val excludedUserSkipped: Int,
         val extraSameDay: Int,
         val eventDiagnostics: List<EventDiagnostic>,
     )
@@ -44,6 +45,7 @@ object EventSelector {
         var excludedDay = 0
         var excludedCutoff = 0
         var excludedPastAlarm = 0
+        var excludedUserSkipped = 0
         val diagnostics = mutableListOf<EventDiagnostic>()
         val eligible = buildList {
             events.forEach { event ->
@@ -80,6 +82,12 @@ object EventSelector {
                     return@forEach
                 }
                 val effectiveStartMillis = start.toInstant().toEpochMilli()
+                val eventKey = "${event.eventId}:${event.instanceStartMillis}"
+                if (eventKey in settings.skippedEventKeys || start.toLocalDate() in settings.skippedDates) {
+                    excludedUserSkipped++
+                    diagnostics += event.toDiagnostic(EventDecision.USER_SKIPPED)
+                    return@forEach
+                }
                 val alarmAt = effectiveStartMillis - settings.leadMinutes * 60_000L
                 if (alarmAt <= nowMillis) {
                     excludedPastAlarm++
@@ -135,6 +143,7 @@ object EventSelector {
             excludedDay = excludedDay,
             excludedCutoff = excludedCutoff,
             excludedPastAlarm = excludedPastAlarm,
+            excludedUserSkipped = excludedUserSkipped,
             extraSameDay = eligible.size - alarms.size,
             eventDiagnostics = diagnostics,
         )

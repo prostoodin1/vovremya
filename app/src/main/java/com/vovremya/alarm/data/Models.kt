@@ -2,6 +2,7 @@ package com.vovremya.alarm.data
 
 import androidx.annotation.ColorInt
 import java.time.DayOfWeek
+import java.time.LocalDate
 
 data class AppSettings(
     val leadMinutes: Int = 90,
@@ -21,6 +22,9 @@ data class AppSettings(
     /** An empty set means every calendar available through Android. */
     val selectedCalendarIds: Set<Long> = emptySet(),
     val automaticUpdates: Boolean = true,
+    val updateChannel: UpdateChannel = UpdateChannel.STABLE,
+    val skippedEventKeys: Set<String> = emptySet(),
+    val skippedDates: Set<LocalDate> = emptySet(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val accentTheme: AccentTheme = AccentTheme.VIOLET,
     @param:ColorInt val customAccentColor: Int = 0xFF6558D3.toInt(),
@@ -28,6 +32,8 @@ data class AppSettings(
 )
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+enum class UpdateChannel { STABLE, BETA }
 
 enum class AccentTheme {
     VIOLET,
@@ -76,6 +82,7 @@ enum class EventDecision {
     DAY_DISABLED,
     AFTER_CUTOFF,
     ALARM_PASSED,
+    USER_SKIPPED,
     EXTRA_SAME_DAY,
 }
 
@@ -156,6 +163,7 @@ data class SyncDiagnostics(
     val excludedDay: Int = 0,
     val excludedCutoff: Int = 0,
     val excludedPastAlarm: Int = 0,
+    val excludedUserSkipped: Int = 0,
     val extraSameDay: Int = 0,
     val unsyncedCalendars: Int = 0,
     val hiddenCalendars: Int = 0,

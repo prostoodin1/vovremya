@@ -68,6 +68,7 @@ class AlarmScheduler(
                     excludedDay = selection.excludedDay,
                     excludedCutoff = selection.excludedCutoff,
                     excludedPastAlarm = selection.excludedPastAlarm,
+                    excludedUserSkipped = selection.excludedUserSkipped,
                     extraSameDay = selection.extraSameDay,
                     unsyncedCalendars = selectedCalendars.count { !it.syncEvents },
                     hiddenCalendars = selectedCalendars.count { !it.visible },

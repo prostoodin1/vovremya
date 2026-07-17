@@ -1,6 +1,7 @@
 package com.vovremya.alarm
 
 import android.app.Application
+import com.vovremya.alarm.data.UpdateChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,7 +20,10 @@ class VovremyaApplication : Application() {
             val settings = container.settingsStore.settings.first()
             container.dailySyncScheduler.scheduleNext(settings.dailySyncMinutes)
             if (settings.automaticUpdates) {
-                container.updateManager.checkAndDownloadUpdate(force = false)
+                container.updateManager.checkAndDownloadUpdate(
+                    force = false,
+                    allowPrerelease = settings.updateChannel == UpdateChannel.BETA,
+                )
             }
         }
     }

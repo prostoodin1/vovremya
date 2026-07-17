@@ -14,9 +14,13 @@ import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.SyncResult
 import com.vovremya.alarm.data.ThemeMode
+import com.vovremya.alarm.data.UpdateChannel
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.update.UpdateCheckResult
 import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -29,6 +33,7 @@ import kotlinx.coroutines.launch
 data class MainUiState(
     val settings: AppSettings = AppSettings(),
     val alarms: List<ScheduledAlarm> = emptyList(),
+    val skippedAlarms: List<ScheduledAlarm> = emptyList(),
     val calendars: List<CalendarInfo> = emptyList(),
     val lastSyncMillis: Long? = null,
     val syncing: Boolean = false,
@@ -63,6 +68,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             syncing = isSyncing,
         )
     }.combine(message) { state, currentMessage -> state.copy(message = currentMessage) }
+        .combine(container.settingsStore.skippedAlarms) { state, skipped ->
+            state.copy(
+                skippedAlarms = skipped
+                    .filter { it.eventStartMillis > System.currentTimeMillis() }
+                    .sortedBy(ScheduledAlarm::eventStartMillis),
+            )
+        }
         .combine(lastError) { state, error -> state.copy(lastError = error) }
         .combine(diagnostics) { state, currentDiagnostics -> state.copy(diagnostics = currentDiagnostics) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
@@ -231,6 +243,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { container.settingsStore.setAutomaticUpdates(enabled) }
     }
 
+    fun setUpdateChannel(channel: UpdateChannel) {
+        viewModelScope.launch { container.settingsStore.setUpdateChannel(channel) }
+    }
+
+    fun skipAlarm(alarm: ScheduledAlarm) {
+        container.alarmScheduler.cancel(alarm)
+        updateAndSync {
+            container.settingsStore.skipAlarm(alarm)
+            message.value = tr("Событие пропущено")
+        }
+    }
+
+    fun restoreAlarm(alarm: ScheduledAlarm) = updateAndSync {
+        container.settingsStore.restoreAlarm(alarm)
+        message.value = tr("Событие возвращено")
+    }
+
+    fun skipAllToday() {
+        val today = LocalDate.now()
+        val alarms = state.value.alarms.filter { it.eventDate() == today }
+        if (alarms.isEmpty()) return
+        alarms.forEach(container.alarmScheduler::cancel)
+        updateAndSync {
+            container.settingsStore.skipDate(today, alarms)
+            message.value = tr("Все события на сегодня пропущены")
+        }
+    }
+
+    fun restoreAllToday() = updateAndSync {
+        container.settingsStore.restoreDate(LocalDate.now())
+        message.value = tr("Все события на сегодня возвращены")
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { container.settingsStore.setThemeMode(mode) }
     }
@@ -249,7 +294,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkForUpdates() {
         viewModelScope.launch {
-            message.value = when (val result = container.updateManager.checkAndDownloadUpdate()) {
+            message.value = when (
+                val result = container.updateManager.checkAndDownloadUpdate(
+                    allowPrerelease = state.value.settings.updateChannel == UpdateChannel.BETA,
+                )
+            ) {
                 UpdateCheckResult.NotConfigured -> "Сначала укажите GitHub-репозиторий в gradle.properties"
                 UpdateCheckResult.UpToDate -> tr("Установлена последняя версия")
                 UpdateCheckResult.NoApkAsset -> tr("В последнем релизе нет APK")
@@ -294,7 +343,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tr("События найдены, но начинаются позже заданной метки")
             d.excludedPastAlarm > 0 ->
                 tr("События найдены, но время будильника для них уже прошло")
+            d.excludedUserSkipped > 0 ->
+                tr("События пропущены пользователем")
             else -> tr("Подходящих событий пока нет")
         }
     }
+
+    private fun ScheduledAlarm.eventDate(): LocalDate = Instant.ofEpochMilli(eventStartMillis)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
 }

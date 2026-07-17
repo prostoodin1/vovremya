@@ -12,13 +12,17 @@ import java.net.URL
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 class UpdateManager(
     private val context: Context,
     private val notificationHelper: NotificationHelper,
 ) {
-    suspend fun checkAndDownloadUpdate(force: Boolean = true): UpdateCheckResult = withContext(Dispatchers.IO) {
+    suspend fun checkAndDownloadUpdate(
+        force: Boolean = true,
+        allowPrerelease: Boolean = false,
+    ): UpdateCheckResult = withContext(Dispatchers.IO) {
         val preferences = context.getSharedPreferences(UPDATE_PREFERENCES, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         if (!force && now - preferences.getLong(KEY_LAST_CHECK, 0L) < AUTO_CHECK_INTERVAL_MILLIS) {
@@ -31,9 +35,11 @@ class UpdateManager(
         }
         var temporary: File? = null
         runCatching {
-            val release = requestJson("https://api.github.com/repos/$repository/releases/latest")
+            val releases = requestJsonArray("https://api.github.com/repos/$repository/releases?per_page=30")
+            val release = selectRelease(releases, allowPrerelease)
+                ?: return@runCatching UpdateCheckResult.UpToDate
             val version = release.getString("tag_name").removePrefix("v")
-            if (compareVersions(version, BuildConfig.VERSION_NAME.substringBefore('-')) <= 0) {
+            if (compareVersions(version, BuildConfig.VERSION_NAME.removeSuffix("-debug")) <= 0) {
                 return@runCatching UpdateCheckResult.UpToDate
             }
             val assets = release.getJSONArray("assets")
@@ -60,15 +66,29 @@ class UpdateManager(
         }
     }
 
-    private fun requestJson(url: String): JSONObject {
+    private fun requestJsonArray(url: String): JSONArray {
         val connection = open(url)
         return try {
             check(connection.responseCode in 200..299) { "GitHub вернул ${connection.responseCode}" }
-            JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
         } finally {
             connection.disconnect()
         }
     }
+
+    internal fun selectRelease(releases: JSONArray, allowPrerelease: Boolean): JSONObject? =
+        (0 until releases.length())
+            .map(releases::getJSONObject)
+            .filterNot { it.optBoolean("draft", false) }
+            .filter { allowPrerelease || !it.optBoolean("prerelease", false) }
+            .maxWithOrNull(
+                Comparator { left, right ->
+                    compareVersions(
+                        left.optString("tag_name").removePrefix("v"),
+                        right.optString("tag_name").removePrefix("v"),
+                    )
+                },
+            )
 
     private fun download(url: String, destination: File) {
         val connection = open(url)
@@ -130,13 +150,44 @@ class UpdateManager(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
 
     internal fun compareVersions(left: String, right: String): Int {
-        val a = left.split('.', '-', '+').map { it.toIntOrNull() ?: 0 }
-        val b = right.split('.', '-', '+').map { it.toIntOrNull() ?: 0 }
-        repeat(maxOf(a.size, b.size)) { index ->
-            val comparison = (a.getOrElse(index) { 0 }).compareTo(b.getOrElse(index) { 0 })
+        val a = SemanticVersion.parse(left)
+        val b = SemanticVersion.parse(right)
+        repeat(maxOf(a.core.size, b.core.size)) { index ->
+            val comparison = a.core.getOrElse(index) { 0 }.compareTo(b.core.getOrElse(index) { 0 })
+            if (comparison != 0) return comparison
+        }
+        if (a.preRelease.isEmpty() && b.preRelease.isNotEmpty()) return 1
+        if (a.preRelease.isNotEmpty() && b.preRelease.isEmpty()) return -1
+        repeat(maxOf(a.preRelease.size, b.preRelease.size)) { index ->
+            val leftPart = a.preRelease.getOrNull(index) ?: return -1
+            val rightPart = b.preRelease.getOrNull(index) ?: return 1
+            val leftNumber = leftPart.toIntOrNull()
+            val rightNumber = rightPart.toIntOrNull()
+            val comparison = when {
+                leftNumber != null && rightNumber != null -> leftNumber.compareTo(rightNumber)
+                leftNumber != null -> -1
+                rightNumber != null -> 1
+                else -> leftPart.compareTo(rightPart, ignoreCase = true)
+            }
             if (comparison != 0) return comparison
         }
         return 0
+    }
+
+    private data class SemanticVersion(
+        val core: List<Int>,
+        val preRelease: List<String>,
+    ) {
+        companion object {
+            fun parse(value: String): SemanticVersion {
+                val normalized = value.trim().removePrefix("v").substringBefore('+')
+                val parts = normalized.split('-', limit = 2)
+                return SemanticVersion(
+                    core = parts.first().split('.').map { it.toIntOrNull() ?: 0 },
+                    preRelease = parts.getOrNull(1)?.split('.')?.filter(String::isNotBlank).orEmpty(),
+                )
+            }
+        }
     }
 
     private companion object {

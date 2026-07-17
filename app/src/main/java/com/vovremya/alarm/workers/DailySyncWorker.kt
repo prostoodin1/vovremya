@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.vovremya.alarm.VovremyaApplication
+import com.vovremya.alarm.data.UpdateChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
@@ -32,7 +33,12 @@ class DailySyncWorker(
         // Update checks do not depend on calendar permission or provider health.
         // Android still asks the user to confirm installing a downloaded APK.
         if (settings.automaticUpdates) {
-            runCatching { container.updateManager.checkAndDownloadUpdate(force = false) }
+            runCatching {
+                container.updateManager.checkAndDownloadUpdate(
+                    force = false,
+                    allowPrerelease = settings.updateChannel == UpdateChannel.BETA,
+                )
+            }
         }
         return if (calendarSyncFailed) Result.retry() else Result.success()
     }

@@ -117,6 +117,53 @@ class EventSelectorTest {
     }
 
     @Test
+    fun `skipping the first event selects the next event of that day`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val firstStart = time(2026, 7, 15, 9, 0)
+        val events = listOf(
+            event(1, firstStart),
+            event(2, time(2026, 7, 15, 11, 0)),
+        )
+
+        val result = EventSelector.select(
+            events,
+            AppSettings(
+                leadMinutes = 30,
+                allEventsPerDay = false,
+                skippedEventKeys = setOf("1:$firstStart"),
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(listOf(2L), result.alarms.map { it.eventId })
+        assertEquals(1, result.excludedUserSkipped)
+    }
+
+    @Test
+    fun `skipping a date excludes every event on that date`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val events = listOf(
+            event(1, time(2026, 7, 15, 9, 0)),
+            event(2, time(2026, 7, 15, 11, 0)),
+            event(3, time(2026, 7, 16, 11, 0)),
+        )
+
+        val result = EventSelector.select(
+            events,
+            AppSettings(
+                leadMinutes = 30,
+                skippedDates = setOf(java.time.LocalDate.of(2026, 7, 15)),
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(listOf(3L), result.alarms.map { it.eventId })
+        assertEquals(2, result.excludedUserSkipped)
+    }
+
+    @Test
     fun `can schedule an all day event at its configured time`() {
         val now = time(2026, 7, 14, 10, 0)
         val allDayStart = ZonedDateTime.of(2026, 7, 15, 0, 0, 0, 0, java.time.ZoneOffset.UTC)

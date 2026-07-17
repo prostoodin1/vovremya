@@ -9,6 +9,9 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -35,6 +38,10 @@ class SettingsStore(private val context: Context) {
         val enabledDays = stringPreferencesKey("enabled_days")
         val calendarIds = stringPreferencesKey("calendar_ids")
         val automaticUpdates = booleanPreferencesKey("automatic_updates")
+        val updateChannel = stringPreferencesKey("update_channel")
+        val skippedEventKeys = stringPreferencesKey("skipped_event_keys")
+        val skippedDates = stringPreferencesKey("skipped_dates")
+        val skippedAlarms = stringPreferencesKey("skipped_alarms")
         val themeMode = stringPreferencesKey("theme_mode")
         val accentTheme = stringPreferencesKey("accent_theme")
         val customAccentColor = intPreferencesKey("custom_accent_color")
@@ -50,6 +57,10 @@ class SettingsStore(private val context: Context) {
     val scheduledAlarms: Flow<List<ScheduledAlarm>> = context.vovremyaDataStore.data
         .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
         .map { decodeAlarms(it[Keys.scheduledAlarms]) }
+
+    val skippedAlarms: Flow<List<ScheduledAlarm>> = context.vovremyaDataStore.data
+        .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+        .map { decodeAlarms(it[Keys.skippedAlarms]) }
 
     val lastSyncMillis: Flow<Long?> = context.vovremyaDataStore.data
         .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
@@ -119,6 +130,62 @@ class SettingsStore(private val context: Context) {
         it[Keys.automaticUpdates] = enabled
     }
 
+    suspend fun setUpdateChannel(value: UpdateChannel) = context.vovremyaDataStore.edit {
+        it[Keys.updateChannel] = value.name
+    }
+
+    suspend fun skipAlarm(alarm: ScheduledAlarm) = context.vovremyaDataStore.edit { preferences ->
+        preferences[Keys.skippedEventKeys] = encodeStringSet(
+            decodeStringSet(preferences[Keys.skippedEventKeys]) + alarm.key,
+        )
+        val skipped = decodeAlarms(preferences[Keys.skippedAlarms])
+            .filterNot { it.key == alarm.key } + alarm
+        preferences[Keys.skippedAlarms] = encodeAlarms(skipped.sortedBy(ScheduledAlarm::eventStartMillis))
+        preferences[Keys.scheduledAlarms] = encodeAlarms(
+            decodeAlarms(preferences[Keys.scheduledAlarms]).filterNot { it.key == alarm.key },
+        )
+    }
+
+    suspend fun restoreAlarm(alarm: ScheduledAlarm) = context.vovremyaDataStore.edit { preferences ->
+        preferences[Keys.skippedEventKeys] = encodeStringSet(
+            decodeStringSet(preferences[Keys.skippedEventKeys]) - alarm.key,
+        )
+        preferences[Keys.skippedAlarms] = encodeAlarms(
+            decodeAlarms(preferences[Keys.skippedAlarms]).filterNot { it.key == alarm.key },
+        )
+        val eventDate = alarm.eventDate()
+        preferences[Keys.skippedDates] = encodeDates(
+            decodeDates(preferences[Keys.skippedDates]) - eventDate,
+        )
+    }
+
+    suspend fun skipDate(date: LocalDate, alarms: List<ScheduledAlarm>) = context.vovremyaDataStore.edit { preferences ->
+        preferences[Keys.skippedDates] = encodeDates(
+            decodeDates(preferences[Keys.skippedDates]) + date,
+        )
+        val skipped = (decodeAlarms(preferences[Keys.skippedAlarms]) + alarms)
+            .distinctBy(ScheduledAlarm::key)
+            .sortedBy(ScheduledAlarm::eventStartMillis)
+        preferences[Keys.skippedAlarms] = encodeAlarms(skipped)
+        val keys = alarms.mapTo(mutableSetOf(), ScheduledAlarm::key)
+        preferences[Keys.scheduledAlarms] = encodeAlarms(
+            decodeAlarms(preferences[Keys.scheduledAlarms]).filterNot { it.key in keys },
+        )
+    }
+
+    suspend fun restoreDate(date: LocalDate) = context.vovremyaDataStore.edit { preferences ->
+        val restored = decodeAlarms(preferences[Keys.skippedAlarms]).filter { it.eventDate() == date }
+        preferences[Keys.skippedDates] = encodeDates(
+            decodeDates(preferences[Keys.skippedDates]) - date,
+        )
+        preferences[Keys.skippedEventKeys] = encodeStringSet(
+            decodeStringSet(preferences[Keys.skippedEventKeys]) - restored.map(ScheduledAlarm::key).toSet(),
+        )
+        preferences[Keys.skippedAlarms] = encodeAlarms(
+            decodeAlarms(preferences[Keys.skippedAlarms]).filterNot { it.eventDate() == date },
+        )
+    }
+
     suspend fun setThemeMode(value: ThemeMode) = context.vovremyaDataStore.edit {
         it[Keys.themeMode] = value.name
     }
@@ -170,6 +237,11 @@ class SettingsStore(private val context: Context) {
             enabledDays = days,
             selectedCalendarIds = calendars,
             automaticUpdates = preferences[Keys.automaticUpdates] ?: true,
+            updateChannel = preferences[Keys.updateChannel]
+                ?.let { stored -> UpdateChannel.entries.firstOrNull { it.name == stored } }
+                ?: UpdateChannel.STABLE,
+            skippedEventKeys = decodeStringSet(preferences[Keys.skippedEventKeys]),
+            skippedDates = decodeDates(preferences[Keys.skippedDates]),
             themeMode = preferences[Keys.themeMode]
                 ?.let { stored -> ThemeMode.entries.firstOrNull { it.name == stored } }
                 ?: ThemeMode.SYSTEM,
@@ -233,4 +305,26 @@ class SettingsStore(private val context: Context) {
             }
         }
     }.getOrDefault(emptyList())
+
+    private fun encodeStringSet(values: Set<String>): String = JSONArray().apply {
+        values.sorted().forEach(::put)
+    }.toString()
+
+    private fun decodeStringSet(raw: String?): Set<String> = runCatching {
+        if (raw.isNullOrBlank()) return@runCatching emptySet()
+        val json = JSONArray(raw)
+        buildSet { repeat(json.length()) { index -> add(json.getString(index)) } }
+    }.getOrDefault(emptySet())
+
+    private fun encodeDates(values: Set<LocalDate>): String = values.sorted().joinToString(",")
+
+    private fun decodeDates(raw: String?): Set<LocalDate> = raw
+        ?.split(',')
+        ?.mapNotNull { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
+        ?.toSet()
+        .orEmpty()
+
+    private fun ScheduledAlarm.eventDate(): LocalDate = Instant.ofEpochMilli(eventStartMillis)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
 }

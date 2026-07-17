@@ -12,6 +12,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -27,6 +28,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +43,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -50,6 +55,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -59,6 +65,7 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.Button
@@ -101,10 +108,12 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vovremya.alarm.BuildConfig
@@ -117,6 +126,7 @@ import com.vovremya.alarm.data.EventSource
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.ThemeMode
+import com.vovremya.alarm.data.UpdateChannel
 import com.vovremya.alarm.localization.appLocale
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.Mint
@@ -128,6 +138,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 data class PermissionState(
@@ -168,6 +179,11 @@ fun MainApp(
     onToggleCalendar: (Long) -> Unit,
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
+    onUpdateChannel: (UpdateChannel) -> Unit,
+    onSkipAlarm: (ScheduledAlarm) -> Unit,
+    onRestoreAlarm: (ScheduledAlarm) -> Unit,
+    onSkipAllToday: () -> Unit,
+    onRestoreAllToday: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
     onCustomAccentColor: (Int) -> Unit,
@@ -222,6 +238,10 @@ fun MainApp(
                     onRequestExactAlarms = onRequestExactAlarms,
                     onRequestFullScreen = onRequestFullScreen,
                     onSync = onSync,
+                    onSkipAlarm = onSkipAlarm,
+                    onRestoreAlarm = onRestoreAlarm,
+                    onSkipAllToday = onSkipAllToday,
+                    onRestoreAllToday = onRestoreAllToday,
                 )
                 Screen.Settings -> SettingsScreen(
                     state = state,
@@ -244,6 +264,7 @@ fun MainApp(
                     onToggleCalendar = onToggleCalendar,
                     onSelectAllCalendars = onSelectAllCalendars,
                     onAutomaticUpdates = onAutomaticUpdates,
+                    onUpdateChannel = onUpdateChannel,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
                     onCustomAccentColor = onCustomAccentColor,
@@ -268,7 +289,15 @@ private fun HomeScreen(
     onRequestExactAlarms: () -> Unit,
     onRequestFullScreen: () -> Unit,
     onSync: () -> Unit,
+    onSkipAlarm: (ScheduledAlarm) -> Unit,
+    onRestoreAlarm: (ScheduledAlarm) -> Unit,
+    onSkipAllToday: () -> Unit,
+    onRestoreAllToday: () -> Unit,
 ) {
+    var revealedAlarm by rememberSaveable { mutableStateOf<String?>(null) }
+    val today = LocalDate.now()
+    val todayAlarms = state.alarms.filter { it.eventDate() == today }
+    val todaySkipped = state.skippedAlarms.filter { it.eventDate() == today }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
@@ -294,22 +323,55 @@ private fun HomeScreen(
                 )
             }
         }
-        item { NextAlarmCard(state.alarms.firstOrNull()) }
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(tr("Ближайшие"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(
-                        tr(if (state.settings.allEventsPerDay) "Все подходящие события" else "По одному событию на день"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+            val next = state.alarms.firstOrNull()
+            NextAlarmCard(
+                alarm = next,
+                revealed = next != null && revealedAlarm == "next:${next.key}",
+                onRevealedChange = { open ->
+                    revealedAlarm = if (open && next != null) "next:${next.key}" else null
+                },
+                onSkip = { next?.let(onSkipAlarm) },
+            )
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Ближайшие"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            tr(if (state.settings.allEventsPerDay) "Все подходящие события" else "По одному событию на день"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    IconButton(onClick = onSync, enabled = permissions.calendar && !state.syncing) {
+                        if (state.syncing) {
+                            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Rounded.Refresh, tr("Обновить"))
+                        }
+                    }
                 }
-                IconButton(onClick = onSync, enabled = permissions.calendar && !state.syncing) {
-                    if (state.syncing) {
-                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Rounded.Refresh, tr("Обновить"))
+                if (todayAlarms.isNotEmpty() || todaySkipped.isNotEmpty() || today in state.settings.skippedDates) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (todayAlarms.isNotEmpty()) {
+                            OutlinedButton(onClick = onSkipAllToday) {
+                                Icon(Icons.Rounded.SkipNext, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(tr("Пропустить все сегодня"))
+                            }
+                        }
+                        if (todaySkipped.isNotEmpty() || today in state.settings.skippedDates) {
+                            OutlinedButton(onClick = onRestoreAllToday) {
+                                Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(tr("Вернуть все сегодня"))
+                            }
+                        }
                     }
                 }
             }
@@ -320,6 +382,40 @@ private fun HomeScreen(
             items(state.alarms, key = ScheduledAlarm::key) { alarm ->
                 AlarmRow(
                     alarm = alarm,
+                    cancelled = false,
+                    revealed = revealedAlarm == "active:${alarm.key}",
+                    onRevealedChange = { open ->
+                        revealedAlarm = if (open) "active:${alarm.key}" else null
+                    },
+                    onSkip = { onSkipAlarm(alarm) },
+                    onRestore = {},
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = tween(360),
+                        placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
+                        fadeOutSpec = tween(220),
+                    ),
+                )
+            }
+        }
+        if (state.skippedAlarms.isNotEmpty()) {
+            item {
+                Text(
+                    tr("Отменённые события"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            items(state.skippedAlarms, key = { "skipped:${it.key}" }) { alarm ->
+                AlarmRow(
+                    alarm = alarm,
+                    cancelled = true,
+                    revealed = revealedAlarm == "skipped:${alarm.key}",
+                    onRevealedChange = { open ->
+                        revealedAlarm = if (open) "skipped:${alarm.key}" else null
+                    },
+                    onSkip = {},
+                    onRestore = { onRestoreAlarm(alarm) },
                     modifier = Modifier.animateItem(
                         fadeInSpec = tween(360),
                         placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
@@ -408,13 +504,37 @@ private fun PermissionRow(label: String, granted: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun NextAlarmCard(alarm: ScheduledAlarm?) {
+private fun NextAlarmCard(
+    alarm: ScheduledAlarm?,
+    revealed: Boolean,
+    onRevealedChange: (Boolean) -> Unit,
+    onSkip: () -> Unit,
+) {
+    if (alarm == null) {
+        NextAlarmCardSurface(alarm = null, modifier = Modifier.fillMaxWidth())
+        return
+    }
+    RevealableAlarmContainer(
+        itemKey = "next:${alarm.key}",
+        revealed = revealed,
+        cancelled = false,
+        onRevealedChange = onRevealedChange,
+        onSkip = onSkip,
+        onRestore = {},
+        shape = RoundedCornerShape(30.dp),
+    ) { foreground ->
+        NextAlarmCardSurface(alarm = alarm, modifier = foreground)
+    }
+}
+
+@Composable
+private fun NextAlarmCardSurface(alarm: ScheduledAlarm?, modifier: Modifier) {
     val primary = MaterialTheme.colorScheme.primary
     val start = listOf(primary, lerp(primary, Color.Black, .38f))
     val cardText = MaterialTheme.colorScheme.onPrimary
     Card(
         shape = RoundedCornerShape(30.dp),
-        modifier = Modifier.fillMaxWidth().animateContentSize(
+        modifier = modifier.fillMaxWidth().animateContentSize(
             spring(dampingRatio = .86f, stiffness = 360f),
         ),
     ) {
@@ -460,31 +580,178 @@ private fun NextAlarmCard(alarm: ScheduledAlarm?) {
 }
 
 @Composable
-private fun AlarmRow(alarm: ScheduledAlarm, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
+private fun AlarmRow(
+    alarm: ScheduledAlarm,
+    cancelled: Boolean,
+    revealed: Boolean,
+    onRevealedChange: (Boolean) -> Unit,
+    onSkip: () -> Unit,
+    onRestore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    RevealableAlarmContainer(
+        itemKey = "${if (cancelled) "skipped" else "active"}:${alarm.key}",
+        revealed = revealed,
+        cancelled = cancelled,
+        onRevealedChange = onRevealedChange,
+        onSkip = onSkip,
+        onRestore = onRestore,
+        modifier = modifier,
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(54.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(17.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(formatTime(alarm.alarmAtMillis), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(formatDayShort(alarm.alarmAtMillis), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(alarm.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).background(Color(alarm.calendarColor), CircleShape))
-                    Spacer(Modifier.width(6.dp))
-                    Text(tr("%s · событие %s", alarm.calendarName, formatTime(alarm.eventStartMillis)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    ) { foreground ->
+        Card(
+            modifier = foreground.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (cancelled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (cancelled) 0.dp else 1.dp),
+        ) {
+            Column {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(54.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(17.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(formatTime(alarm.alarmAtMillis), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(formatDayShort(alarm.alarmAtMillis), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(alarm.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(7.dp).background(Color(alarm.calendarColor), CircleShape))
+                            Spacer(Modifier.width(6.dp))
+                            Text(tr("%s · событие %s", alarm.calendarName, formatTime(alarm.eventStartMillis)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    if (!alarm.location.isNullOrBlank()) Icon(Icons.Rounded.LocationOn, null, tint = MaterialTheme.colorScheme.outline)
+                }
+                if (cancelled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Block, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            tr("Отменено пользователем"),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
-            if (!alarm.location.isNullOrBlank()) Icon(Icons.Rounded.LocationOn, null, tint = MaterialTheme.colorScheme.outline)
+        }
+    }
+}
+
+@Composable
+private fun RevealableAlarmContainer(
+    itemKey: String,
+    revealed: Boolean,
+    cancelled: Boolean,
+    onRevealedChange: (Boolean) -> Unit,
+    onSkip: () -> Unit,
+    onRestore: () -> Unit,
+    shape: RoundedCornerShape,
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val maxOffsetPx = with(density) { 180.dp.toPx() }
+    val offset = remember(itemKey) { Animatable(0f) }
+    val animation = spring<Float>(dampingRatio = .84f, stiffness = 420f)
+    LaunchedEffect(revealed, maxOffsetPx) {
+        offset.animateTo(if (revealed) -maxOffsetPx else 0f, animation)
+    }
+    val dragState = rememberDraggableState { delta ->
+        scope.launch {
+            offset.snapTo((offset.value + delta).coerceIn(-maxOffsetPx, 0f))
+        }
+    }
+    Box(modifier = modifier.fillMaxWidth().clip(shape)) {
+        Row(
+            modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (cancelled) {
+                AlarmActionButton(
+                    label = tr("Вернуть"),
+                    icon = Icons.Rounded.Refresh,
+                    color = Mint,
+                    onClick = {
+                        onRevealedChange(false)
+                        onRestore()
+                    },
+                )
+                AlarmActionButton(
+                    label = tr("Закрыть"),
+                    icon = Icons.Rounded.ChevronRight,
+                    color = MaterialTheme.colorScheme.primary,
+                    onClick = { onRevealedChange(false) },
+                )
+            } else {
+                AlarmActionButton(
+                    label = tr("Пропустить"),
+                    icon = Icons.Rounded.SkipNext,
+                    color = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        onRevealedChange(false)
+                        onSkip()
+                    },
+                )
+                AlarmActionButton(
+                    label = tr("Вернуть"),
+                    icon = Icons.Rounded.Refresh,
+                    color = Mint,
+                    onClick = { onRevealedChange(false) },
+                )
+            }
+        }
+        content(
+            Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                .draggable(
+                    state = dragState,
+                    orientation = Orientation.Horizontal,
+                    onDragStopped = {
+                        val shouldReveal = offset.value < -maxOffsetPx * .28f
+                        onRevealedChange(shouldReveal)
+                        scope.launch {
+                            offset.animateTo(if (shouldReveal) -maxOffsetPx else 0f, animation)
+                        }
+                    },
+                )
+                .clickable { onRevealedChange(!revealed) },
+        )
+    }
+}
+
+@Composable
+private fun AlarmActionButton(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.width(84.dp).height(64.dp).clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick),
+        color = color.copy(alpha = .16f),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(icon, null, Modifier.size(21.dp), tint = color)
+            Spacer(Modifier.height(4.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
         }
     }
 }
@@ -528,6 +795,7 @@ private fun SettingsScreen(
     onToggleCalendar: (Long) -> Unit,
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
+    onUpdateChannel: (UpdateChannel) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
     onCustomAccentColor: (Int) -> Unit,
@@ -965,6 +1233,33 @@ private fun SettingsScreen(
         }
         item {
             SettingsCard(Icons.Rounded.SystemUpdate, tr("Обновления"), tr("Через GitHub Releases")) {
+                Text(tr("Канал обновлений"), fontWeight = FontWeight.SemiBold)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = state.settings.updateChannel == UpdateChannel.STABLE,
+                        onClick = { onUpdateChannel(UpdateChannel.STABLE) },
+                        label = { Text(tr("Стабильная версия")) },
+                    )
+                    FilterChip(
+                        selected = state.settings.updateChannel == UpdateChannel.BETA,
+                        onClick = { onUpdateChannel(UpdateChannel.BETA) },
+                        label = { Text(tr("Бета-версии")) },
+                    )
+                }
+                Text(
+                    tr(
+                        if (state.settings.updateChannel == UpdateChannel.BETA) {
+                            "Новые функции раньше, но возможны ошибки"
+                        } else {
+                            "Только проверенные полные версии"
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 ToggleRow(
                     title = tr("Проверять автоматически"),
                     subtitle = tr("APK загрузится сам; установку подтверждает Android"),
@@ -1347,6 +1642,7 @@ private fun diagnosticsText(diagnostics: SyncDiagnostics?): String = when {
     diagnostics.excludedDay > 0 -> tr("События есть, но нужные дни недели отключены")
     diagnostics.excludedCutoff > 0 -> tr("События начинаются позже заданной метки")
     diagnostics.excludedPastAlarm > 0 -> tr("Время этих будильников уже прошло")
+    diagnostics.excludedUserSkipped > 0 -> tr("События пропущены пользователем")
     else -> tr("Проверьте фильтры календарей, дней и времени в настройках")
 }
 
@@ -1370,6 +1666,7 @@ private fun diagnosticDecision(event: EventDiagnostic): String {
         EventDecision.DAY_DISABLED -> tr("Пропущено: день недели отключён")
         EventDecision.AFTER_CUTOFF -> tr("Пропущено: позже временной метки")
         EventDecision.ALARM_PASSED -> tr("Пропущено: время будильника уже прошло")
+        EventDecision.USER_SKIPPED -> tr("Пропущено пользователем")
         EventDecision.EXTRA_SAME_DAY -> tr("Пропущено: на этот день уже выбран более ранний будильник")
     }
     return if (event.source == EventSource.EVENTS) "$decision · ${tr("найдено резервным запросом")}" else decision
@@ -1378,6 +1675,10 @@ private fun diagnosticDecision(event: EventDiagnostic): String {
 private fun formatClockMinutes(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
 
 private fun formatTime(millis: Long): String = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(TIME_FORMAT)
+
+private fun ScheduledAlarm.eventDate(): LocalDate = Instant.ofEpochMilli(eventStartMillis)
+    .atZone(ZoneId.systemDefault())
+    .toLocalDate()
 
 private fun formatDayLong(millis: Long): String = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(DAY_LONG_FORMAT)
     .replaceFirstChar { it.uppercase() }
