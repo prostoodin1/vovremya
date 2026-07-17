@@ -268,6 +268,7 @@ class SettingsStore(private val context: Context) {
                 put("calendarName", alarm.calendarName)
                 put("calendarColor", alarm.calendarColor)
                 put("allDay", alarm.allDay)
+                put("delivery", alarm.delivery.name)
                 put("soundEnabled", alarm.soundEnabled)
                 put("vibrationEnabled", alarm.vibrationEnabled)
                 put("soundUri", alarm.soundUri)
@@ -280,7 +281,10 @@ class SettingsStore(private val context: Context) {
     private fun decodeAlarms(raw: String?): List<ScheduledAlarm> = runCatching {
         if (raw.isNullOrBlank()) return@runCatching emptyList()
         val json = JSONArray(raw)
-        buildList {
+        val hasDelivery = (0 until json.length()).all { index ->
+            json.getJSONObject(index).has("delivery")
+        }
+        val decoded = buildList {
             repeat(json.length()) { index ->
                 val item = json.getJSONObject(index)
                 add(
@@ -295,6 +299,9 @@ class SettingsStore(private val context: Context) {
                         calendarName = item.getString("calendarName"),
                         calendarColor = item.getInt("calendarColor"),
                         allDay = item.optBoolean("allDay", false),
+                        delivery = item.optString("delivery")
+                            .let { stored -> AlarmDelivery.entries.firstOrNull { it.name == stored } }
+                            ?: AlarmDelivery.ALARM,
                         soundEnabled = item.optBoolean("soundEnabled", true),
                         vibrationEnabled = item.optBoolean("vibrationEnabled", true),
                         soundUri = item.optString("soundUri"),
@@ -304,7 +311,23 @@ class SettingsStore(private val context: Context) {
                 )
             }
         }
+        if (hasDelivery) decoded else migrateLegacyDeliveries(decoded)
     }.getOrDefault(emptyList())
+
+    private fun migrateLegacyDeliveries(alarms: List<ScheduledAlarm>): List<ScheduledAlarm> = alarms
+        .groupBy { it.eventDate() }
+        .values
+        .flatMap { dayAlarms ->
+            dayAlarms.sortedBy(ScheduledAlarm::eventStartMillis).mapIndexed { index, alarm ->
+                val delivery = if (index == 0) AlarmDelivery.ALARM else AlarmDelivery.SILENT_REMINDER
+                alarm.copy(
+                    delivery = delivery,
+                    soundEnabled = delivery == AlarmDelivery.ALARM && alarm.soundEnabled,
+                    vibrationEnabled = delivery == AlarmDelivery.ALARM && alarm.vibrationEnabled,
+                )
+            }
+        }
+        .sortedBy(ScheduledAlarm::alarmAtMillis)
 
     private fun encodeStringSet(values: Set<String>): String = JSONArray().apply {
         values.sorted().forEach(::put)

@@ -117,6 +117,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vovremya.alarm.BuildConfig
+import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.AccentTheme
 import com.vovremya.alarm.data.BackgroundStyle
@@ -340,7 +341,7 @@ private fun HomeScreen(
                     Column(Modifier.weight(1f)) {
                         Text(tr("Ближайшие"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(
-                            tr(if (state.settings.allEventsPerDay) "Все подходящие события" else "По одному событию на день"),
+                            tr(if (state.settings.allEventsPerDay) "Будильники и тихие напоминания" else "По одному событию на день"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -626,6 +627,27 @@ private fun AlarmRow(
                         }
                     }
                     if (!alarm.location.isNullOrBlank()) Icon(Icons.Rounded.LocationOn, null, tint = MaterialTheme.colorScheme.outline)
+                }
+                if (!cancelled) {
+                    val reminder = alarm.delivery == AlarmDelivery.SILENT_REMINDER
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (reminder) Icons.Rounded.NotificationsActive else Icons.Rounded.Alarm,
+                            null,
+                            Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            tr(if (reminder) "Тихое напоминание · без звука и вибрации" else "Будильник · звук по настройкам"),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
                 if (cancelled) {
                     Row(
@@ -965,8 +987,8 @@ private fun SettingsScreen(
         item {
             SettingsCard(Icons.Rounded.NotificationsActive, tr("Будильники"), tr("События, звук и повтор сигнала")) {
                 ToggleRow(
-                    title = tr("Все события за день"),
-                    subtitle = tr(if (state.settings.allEventsPerDay) "Будильник для каждого подходящего события" else "Только самое раннее событие дня"),
+                    title = tr("Напоминать об остальных событиях"),
+                    subtitle = tr(if (state.settings.allEventsPerDay) "Первое событие — будильник, остальные — без звука и вибрации" else "Только первое событие дня с будильником"),
                     checked = state.settings.allEventsPerDay,
                     onChecked = onAllEventsPerDay,
                 )
@@ -1544,7 +1566,11 @@ private fun DiagnosticEventRow(event: EventDiagnostic) {
         Text(
             diagnosticDecision(event),
             style = MaterialTheme.typography.labelMedium,
-            color = if (event.decision == EventDecision.ALARM_CREATED) Mint else MaterialTheme.colorScheme.error,
+            color = if (event.decision in setOf(EventDecision.ALARM_CREATED, EventDecision.REMINDER_CREATED)) {
+                Mint
+            } else {
+                MaterialTheme.colorScheme.error
+            },
         )
     }
 }
@@ -1659,6 +1685,7 @@ private fun scanSummary(diagnostics: SyncDiagnostics): String = tr(
 private fun diagnosticDecision(event: EventDiagnostic): String {
     val decision = when (event.decision) {
         EventDecision.ALARM_CREATED -> tr("Будильник создан")
+        EventDecision.REMINDER_CREATED -> tr("Тихое напоминание создано")
         EventDecision.ALL_DAY -> tr("Пропущено: событие на весь день")
         EventDecision.CANCELED -> tr("Пропущено: событие отменено")
         EventDecision.DECLINED -> tr("Пропущено: приглашение отклонено")

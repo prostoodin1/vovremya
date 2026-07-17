@@ -7,6 +7,7 @@ object AlarmPayload {
     const val EXTRA_ALARM_AT = "alarm_at"
     const val EXTRA_LOCATION = "alarm_location"
     const val EXTRA_ALL_DAY = "event_all_day"
+    const val EXTRA_DELIVERY = "alarm_delivery"
     const val EXTRA_SOUND_ENABLED = "alarm_sound_enabled"
     const val EXTRA_VIBRATION_ENABLED = "alarm_vibration_enabled"
     const val EXTRA_SOUND_URI = "alarm_sound_uri"

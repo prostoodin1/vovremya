@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -52,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vovremya.alarm.VovremyaApplication
+import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.domain.AlarmPayload
@@ -82,16 +84,22 @@ class AlarmActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val key = intent.getStringExtra(AlarmPayload.EXTRA_KEY).orEmpty()
-        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank { tr("Пора собираться") }
         val eventStart = intent.getLongExtra(AlarmPayload.EXTRA_EVENT_START, 0L)
         val location = intent.getStringExtra(AlarmPayload.EXTRA_LOCATION)
         val allDay = intent.getBooleanExtra(AlarmPayload.EXTRA_ALL_DAY, false)
-        val soundEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
-        val vibrationEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        val delivery = intent.getStringExtra(AlarmPayload.EXTRA_DELIVERY)
+            ?.let { stored -> AlarmDelivery.entries.firstOrNull { it.name == stored } }
+            ?: AlarmDelivery.ALARM
+        val isReminder = delivery == AlarmDelivery.SILENT_REMINDER
+        val title = intent.getStringExtra(AlarmPayload.EXTRA_TITLE).orEmpty().ifBlank {
+            tr(if (isReminder) "Напоминание о событии" else "Пора собираться")
+        }
+        val soundEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
+        val vibrationEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
         val soundUri = intent.getStringExtra(AlarmPayload.EXTRA_SOUND_URI).orEmpty()
         val snoozeMinutes = intent.getIntExtra(AlarmPayload.EXTRA_SNOOZE_MINUTES, 10).coerceIn(1, 120)
         val autoSilenceMinutes = intent.getIntExtra(AlarmPayload.EXTRA_AUTO_SILENCE_MINUTES, 10).coerceIn(1, 60)
-        startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes)
+        if (!isReminder) startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes)
         setContent {
             val settings by (application as VovremyaApplication).container.settingsStore.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
@@ -107,6 +115,7 @@ class AlarmActivity : ComponentActivity() {
                     allDay = allDay,
                     location = location,
                     snoozeMinutes = snoozeMinutes,
+                    isReminder = isReminder,
                     onDismiss = { stopAndClose(key) },
                     onSnooze = {
                         snooze(
@@ -213,6 +222,7 @@ private fun AlarmScreen(
     allDay: Boolean,
     location: String?,
     snoozeMinutes: Int,
+    isReminder: Boolean,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
@@ -250,11 +260,20 @@ private fun AlarmScreen(
                     modifier = Modifier.size(90.dp).background(primary, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.Alarm, null, tint = Color.White, modifier = Modifier.size(44.dp))
+                    Icon(
+                        if (isReminder) Icons.Rounded.NotificationsNone else Icons.Rounded.Alarm,
+                        null,
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp),
+                    )
                 }
             }
             Spacer(Modifier.height(40.dp))
-            Text(tr("ПОРА СОБИРАТЬСЯ"), color = primary, fontWeight = FontWeight.SemiBold)
+            Text(
+                tr(if (isReminder) "ТИХОЕ НАПОМИНАНИЕ" else "ПОРА СОБИРАТЬСЯ"),
+                color = primary,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(Modifier.height(12.dp))
             Text(
                 if (allDay) tr("Весь день") else formatEventTime(eventStartMillis),
@@ -281,13 +300,15 @@ private fun AlarmScreen(
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF241C52)),
-            ) { Text(tr("Я встал"), fontWeight = FontWeight.Bold) }
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onSnooze,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(20.dp),
-            ) { Text(tr("Отложить на %d мин", snoozeMinutes), color = Color.White) }
+            ) { Text(tr(if (isReminder) "Закрыть" else "Я встал"), fontWeight = FontWeight.Bold) }
+            if (!isReminder) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onSnooze,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(20.dp),
+                ) { Text(tr("Отложить на %d мин", snoozeMinutes), color = Color.White) }
+            }
         }
     }
 }

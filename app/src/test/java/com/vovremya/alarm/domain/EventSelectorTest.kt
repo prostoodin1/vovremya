@@ -1,6 +1,7 @@
 package com.vovremya.alarm.domain
 
 import com.vovremya.alarm.data.AppSettings
+import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.EventDecision
 import java.time.DayOfWeek
@@ -98,7 +99,7 @@ class EventSelectorTest {
     }
 
     @Test
-    fun `creates alarms for every event when all events mode is enabled`() {
+    fun `creates one alarm and silent reminders for later events`() {
         val now = time(2026, 7, 14, 10, 0)
         val events = listOf(
             event(1, time(2026, 7, 15, 9, 0)),
@@ -113,6 +114,12 @@ class EventSelectorTest {
         )
 
         assertEquals(listOf(1L, 2L), result.alarms.map { it.eventId })
+        assertEquals(
+            listOf(AlarmDelivery.ALARM, AlarmDelivery.SILENT_REMINDER),
+            result.alarms.map { it.delivery },
+        )
+        assertEquals(listOf(true, false), result.alarms.map { it.soundEnabled })
+        assertEquals(listOf(true, false), result.alarms.map { it.vibrationEnabled })
         assertEquals(0, result.extraSameDay)
     }
 
@@ -129,7 +136,7 @@ class EventSelectorTest {
             events,
             AppSettings(
                 leadMinutes = 30,
-                allEventsPerDay = false,
+                allEventsPerDay = true,
                 skippedEventKeys = setOf("1:$firstStart"),
             ),
             now,
@@ -137,7 +144,45 @@ class EventSelectorTest {
         )
 
         assertEquals(listOf(2L), result.alarms.map { it.eventId })
+        assertEquals(AlarmDelivery.ALARM, result.alarms.single().delivery)
         assertEquals(1, result.excludedUserSkipped)
+    }
+
+    @Test
+    fun `each day starts with a full alarm`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val events = listOf(
+            event(1, time(2026, 7, 15, 9, 0)),
+            event(2, time(2026, 7, 15, 11, 0)),
+            event(3, time(2026, 7, 16, 8, 0)),
+            event(4, time(2026, 7, 16, 10, 0)),
+        )
+
+        val result = EventSelector.select(
+            events,
+            AppSettings(leadMinutes = 30, allEventsPerDay = true),
+            now,
+            zone,
+        )
+
+        assertEquals(
+            listOf(
+                AlarmDelivery.ALARM,
+                AlarmDelivery.SILENT_REMINDER,
+                AlarmDelivery.ALARM,
+                AlarmDelivery.SILENT_REMINDER,
+            ),
+            result.alarms.map { it.delivery },
+        )
+        assertEquals(
+            listOf(
+                EventDecision.ALARM_CREATED,
+                EventDecision.REMINDER_CREATED,
+                EventDecision.ALARM_CREATED,
+                EventDecision.REMINDER_CREATED,
+            ),
+            result.eventDiagnostics.map { it.decision },
+        )
     }
 
     @Test

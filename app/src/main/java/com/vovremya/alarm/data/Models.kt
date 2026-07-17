@@ -75,6 +75,7 @@ enum class EventSource { INSTANCES, EVENTS }
 
 enum class EventDecision {
     ALARM_CREATED,
+    REMINDER_CREATED,
     ALL_DAY,
     CANCELED,
     DECLINED,
@@ -85,6 +86,8 @@ enum class EventDecision {
     USER_SKIPPED,
     EXTRA_SAME_DAY,
 }
+
+enum class AlarmDelivery { ALARM, SILENT_REMINDER }
 
 data class CalendarEvent(
     val eventId: Long,
@@ -119,6 +122,7 @@ data class ScheduledAlarm(
     val calendarName: String,
     @param:ColorInt val calendarColor: Int,
     val allDay: Boolean = false,
+    val delivery: AlarmDelivery = AlarmDelivery.ALARM,
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val soundUri: String = "",

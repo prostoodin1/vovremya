@@ -251,6 +251,17 @@ private val translations = listOf(
     t("Только проверенные полные версии", "Only tested stable releases", "Nur geprüfte stabile Versionen", "Uniquement les versions stables vérifiées", "Solo versiones estables verificadas", "Лише перевірені стабільні версії"),
     t("Новые функции раньше, но возможны ошибки", "Get new features earlier, but bugs are possible", "Neue Funktionen früher, mögliche Fehler", "Nouvelles fonctions plus tôt, avec des risques d’erreurs", "Nuevas funciones antes, pero puede haber errores", "Нові функції раніше, але можливі помилки"),
     t("найдено резервным запросом", "found by fallback query", "durch Ersatzabfrage gefunden", "trouvé par requête de secours", "encontrado mediante consulta alternativa", "знайдено резервним запитом"),
+    t("Будильники и тихие напоминания", "Alarms and silent reminders", "Wecker und stille Erinnerungen", "Alarmes et rappels silencieux", "Alarmas y recordatorios silenciosos", "Будильники й тихі нагадування"),
+    t("Напоминать об остальных событиях", "Remind me about later events", "An spätere Termine erinnern", "Rappeler les événements suivants", "Recordar los eventos posteriores", "Нагадувати про наступні події"),
+    t("Первое событие — будильник, остальные — без звука и вибрации", "The first event is an alarm; the others have no sound or vibration", "Der erste Termin ist ein Wecker, alle weiteren sind lautlos", "Le premier événement est une alarme, les suivants sont silencieux", "El primer evento es una alarma; los demás no tienen sonido ni vibración", "Перша подія — будильник, решта — без звуку та вібрації"),
+    t("Только первое событие дня с будильником", "Only the first event of the day has an alarm", "Nur der erste Termin des Tages hat einen Wecker", "Seul le premier événement du jour a une alarme", "Solo el primer evento del día tiene alarma", "Лише перша подія дня має будильник"),
+    t("Тихое напоминание · без звука и вибрации", "Silent reminder · no sound or vibration", "Stille Erinnerung · ohne Ton und Vibration", "Rappel silencieux · sans son ni vibration", "Recordatorio silencioso · sin sonido ni vibración", "Тихе нагадування · без звуку та вібрації"),
+    t("Будильник · звук по настройкам", "Alarm · sound as configured", "Wecker · Ton wie eingestellt", "Alarme · son selon les réglages", "Alarma · sonido según los ajustes", "Будильник · звук за налаштуваннями"),
+    t("Тихие напоминания", "Silent reminders", "Stille Erinnerungen", "Rappels silencieux", "Recordatorios silenciosos", "Тихі нагадування"),
+    t("Экран для последующих событий без звука и вибрации", "Full-screen reminders for later events without sound or vibration", "Vollbild-Erinnerungen für spätere Termine ohne Ton und Vibration", "Rappels plein écran pour les événements suivants, sans son ni vibration", "Recordatorios a pantalla completa para eventos posteriores sin sonido ni vibración", "Повноекранні нагадування про наступні події без звуку та вібрації"),
+    t("Напоминание о событии", "Event reminder", "Terminerinnerung", "Rappel d’événement", "Recordatorio de evento", "Нагадування про подію"),
+    t("ТИХОЕ НАПОМИНАНИЕ", "SILENT REMINDER", "STILLE ERINNERUNG", "RAPPEL SILENCIEUX", "RECORDATORIO SILENCIOSO", "ТИХЕ НАГАДУВАННЯ"),
+    t("Тихое напоминание создано", "Silent reminder created", "Stille Erinnerung erstellt", "Rappel silencieux créé", "Recordatorio silencioso creado", "Тихе нагадування створено"),
 ).associateBy(Translation::ru)
 
 fun appLocale(): Locale {

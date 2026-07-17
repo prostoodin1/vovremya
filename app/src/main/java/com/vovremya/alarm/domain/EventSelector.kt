@@ -1,6 +1,7 @@
 package com.vovremya.alarm.domain
 
 import com.vovremya.alarm.data.AppSettings
+import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
@@ -97,16 +98,23 @@ object EventSelector {
                 add(EligibleEvent(event, start.toLocalDate(), effectiveStartMillis, alarmAt))
             }
         }
-        val selected = if (settings.allEventsPerDay) {
-            eligible
-        } else {
-            eligible
-                .groupBy(EligibleEvent::date)
-                .values
-                .mapNotNull { dayEvents -> dayEvents.minByOrNull(EligibleEvent::effectiveStartMillis) }
-        }
-        val alarms = selected.map { selectedEvent ->
+        val selected = eligible
+            .groupBy(EligibleEvent::date)
+            .values
+            .flatMap { dayEvents ->
+                val sorted = dayEvents.sortedBy(EligibleEvent::effectiveStartMillis)
+                val included = if (settings.allEventsPerDay) sorted else sorted.take(1)
+                included.mapIndexed { index, event ->
+                    SelectedEvent(
+                        eligible = event,
+                        delivery = if (index == 0) AlarmDelivery.ALARM else AlarmDelivery.SILENT_REMINDER,
+                    )
+                }
+            }
+        val alarms = selected.map { selection ->
+            val selectedEvent = selection.eligible
             val event = selectedEvent.event
+            val isAlarm = selection.delivery == AlarmDelivery.ALARM
             ScheduledAlarm(
                 key = "${event.eventId}:${event.instanceStartMillis}",
                 eventId = event.eventId,
@@ -118,21 +126,25 @@ object EventSelector {
                 calendarName = event.calendarName,
                 calendarColor = event.calendarColor,
                 allDay = event.allDay,
-                soundEnabled = settings.alarmSoundEnabled,
-                vibrationEnabled = settings.alarmVibrationEnabled,
+                delivery = selection.delivery,
+                soundEnabled = isAlarm && settings.alarmSoundEnabled,
+                vibrationEnabled = isAlarm && settings.alarmVibrationEnabled,
                 soundUri = settings.alarmSoundUri,
                 snoozeMinutes = settings.snoozeMinutes,
                 autoSilenceMinutes = settings.autoSilenceMinutes,
             )
         }.sortedBy(ScheduledAlarm::alarmAtMillis)
-        val selectedKeys = selected.mapTo(mutableSetOf()) { it.event.eventId to it.event.instanceStartMillis }
+        val deliveryByKey = selected.associate { selection ->
+            val event = selection.eligible.event
+            (event.eventId to event.instanceStartMillis) to selection.delivery
+        }
         eligible.forEach { eligibleEvent ->
             val event = eligibleEvent.event
             diagnostics += event.toDiagnostic(
-                if ((event.eventId to event.instanceStartMillis) in selectedKeys) {
-                    EventDecision.ALARM_CREATED
-                } else {
-                    EventDecision.EXTRA_SAME_DAY
+                when (deliveryByKey[event.eventId to event.instanceStartMillis]) {
+                    AlarmDelivery.ALARM -> EventDecision.ALARM_CREATED
+                    AlarmDelivery.SILENT_REMINDER -> EventDecision.REMINDER_CREATED
+                    null -> EventDecision.EXTRA_SAME_DAY
                 },
             )
         }
@@ -154,6 +166,11 @@ object EventSelector {
         val date: java.time.LocalDate,
         val effectiveStartMillis: Long,
         val alarmAtMillis: Long,
+    )
+
+    private data class SelectedEvent(
+        val eligible: EligibleEvent,
+        val delivery: AlarmDelivery,
     )
 
     private fun CalendarEvent.toDiagnostic(decision: EventDecision) = EventDiagnostic(

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import com.vovremya.alarm.MainActivity
 import com.vovremya.alarm.data.CalendarInfo
+import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.CalendarRepository
 import com.vovremya.alarm.data.ScheduledAlarm
@@ -100,6 +101,7 @@ class AlarmScheduler(
                 putExtra(AlarmPayload.EXTRA_ALARM_AT, alarm.alarmAtMillis)
                 putExtra(AlarmPayload.EXTRA_LOCATION, alarm.location)
                 putExtra(AlarmPayload.EXTRA_ALL_DAY, alarm.allDay)
+                putExtra(AlarmPayload.EXTRA_DELIVERY, alarm.delivery.name)
                 putExtra(AlarmPayload.EXTRA_SOUND_ENABLED, alarm.soundEnabled)
                 putExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, alarm.vibrationEnabled)
                 putExtra(AlarmPayload.EXTRA_SOUND_URI, alarm.soundUri)
@@ -108,7 +110,9 @@ class AlarmScheduler(
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        if (canScheduleExactAlarms()) {
+        if (alarm.delivery == AlarmDelivery.SILENT_REMINDER) {
+            scheduleReminder(alarm, alarmIntent)
+        } else if (canScheduleExactAlarms()) {
             val showAppIntent = PendingIntent.getActivity(
                 context,
                 0,
@@ -125,6 +129,22 @@ class AlarmScheduler(
             }
         } else {
             scheduleInexact(alarm, alarmIntent)
+        }
+    }
+
+    private fun scheduleReminder(alarm: ScheduledAlarm, reminderIntent: PendingIntent) {
+        if (!canScheduleExactAlarms()) {
+            scheduleInexact(alarm, reminderIntent)
+            return
+        }
+        try {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                alarm.alarmAtMillis,
+                reminderIntent,
+            )
+        } catch (_: SecurityException) {
+            scheduleInexact(alarm, reminderIntent)
         }
     }
 
