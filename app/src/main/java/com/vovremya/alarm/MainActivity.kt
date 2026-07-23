@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
                     onAllDayEventMinutes = viewModel::setAllDayEventMinutes,
                     onAlarmSoundEnabled = viewModel::setAlarmSoundEnabled,
                     onAlarmVibrationEnabled = viewModel::setAlarmVibrationEnabled,
+                    onReminderVibrationEnabled = viewModel::setReminderVibrationEnabled,
                     onPickAlarmSound = { openAlarmSoundPicker(state.settings.alarmSoundUri) },
                     onSnoozeMinutes = viewModel::setSnoozeMinutes,
                     onAutoSilenceMinutes = viewModel::setAutoSilenceMinutes,
@@ -137,6 +138,8 @@ class MainActivity : ComponentActivity() {
                     onCustomAccentColor = viewModel::setCustomAccentColor,
                     onBackgroundStyle = viewModel::setBackgroundStyle,
                     onCheckUpdates = viewModel::checkForUpdates,
+                    onLoadReleaseCatalog = viewModel::loadReleaseCatalog,
+                    onDownloadRelease = viewModel::downloadRelease,
                     onMessageShown = viewModel::clearMessage,
                 )
             }

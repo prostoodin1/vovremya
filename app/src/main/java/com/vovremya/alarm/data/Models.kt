@@ -15,6 +15,7 @@ data class AppSettings(
     val allDayEventMinutes: Int = 9 * 60,
     val alarmSoundEnabled: Boolean = true,
     val alarmVibrationEnabled: Boolean = true,
+    val reminderVibrationEnabled: Boolean = false,
     val alarmSoundUri: String = "",
     val snoozeMinutes: Int = 10,
     val autoSilenceMinutes: Int = 10,

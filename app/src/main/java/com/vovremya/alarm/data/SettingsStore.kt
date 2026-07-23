@@ -32,6 +32,7 @@ class SettingsStore(private val context: Context) {
         val allDayEventMinutes = intPreferencesKey("all_day_event_minutes")
         val alarmSoundEnabled = booleanPreferencesKey("alarm_sound_enabled")
         val alarmVibrationEnabled = booleanPreferencesKey("alarm_vibration_enabled")
+        val reminderVibrationEnabled = booleanPreferencesKey("reminder_vibration_enabled")
         val alarmSoundUri = stringPreferencesKey("alarm_sound_uri")
         val snoozeMinutes = intPreferencesKey("snooze_minutes")
         val autoSilenceMinutes = intPreferencesKey("auto_silence_minutes")
@@ -104,6 +105,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setAlarmVibrationEnabled(enabled: Boolean) = context.vovremyaDataStore.edit {
         it[Keys.alarmVibrationEnabled] = enabled
+    }
+
+    suspend fun setReminderVibrationEnabled(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.reminderVibrationEnabled] = enabled
     }
 
     suspend fun setAlarmSoundUri(uri: String?) = context.vovremyaDataStore.edit {
@@ -231,6 +236,7 @@ class SettingsStore(private val context: Context) {
             allDayEventMinutes = preferences[Keys.allDayEventMinutes] ?: 9 * 60,
             alarmSoundEnabled = preferences[Keys.alarmSoundEnabled] ?: true,
             alarmVibrationEnabled = preferences[Keys.alarmVibrationEnabled] ?: true,
+            reminderVibrationEnabled = preferences[Keys.reminderVibrationEnabled] ?: false,
             alarmSoundUri = preferences[Keys.alarmSoundUri].orEmpty(),
             snoozeMinutes = preferences[Keys.snoozeMinutes] ?: 10,
             autoSilenceMinutes = preferences[Keys.autoSilenceMinutes] ?: 10,

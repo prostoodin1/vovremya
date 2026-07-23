@@ -58,7 +58,7 @@ Debug APK появится в app/build/outputs/apk/debug/app-debug.apk.
     githubRepository=owner/repository
 
 Приложение обращается только к публичному endpoint последнего GitHub Release,
-показывает стабильные релизы либо prerelease-бета-версии по выбору пользователя, сравнивает versionName с тегом вида v1.5.0-beta.2, скачивает первый APK asset и
+показывает стабильные релизы либо prerelease-бета-версии по выбору пользователя, сравнивает versionName с тегом вида v1.5.0-beta.3, скачивает первый APK asset и
 показывает уведомление для установки.
 
 Android не разрешает обычному приложению устанавливать APK полностью молча.
@@ -77,7 +77,7 @@ Workflow .github/workflows/android-release.yml запускается для т�
 - RELEASE_KEY_PASSWORD.
 
 Затем увеличьте versionCode и versionName в app/build.gradle.kts и отправьте
-тег, например v1.5.0-beta.2. Workflow прогонит тесты/lint, подпишет APK и добавит его к
+тег, например v1.5.0-beta.3. Workflow прогонит тесты/lint, подпишет APK и добавит его к
 GitHub Release.
 
 Локально можно скопировать keystore.properties.example в keystore.properties и

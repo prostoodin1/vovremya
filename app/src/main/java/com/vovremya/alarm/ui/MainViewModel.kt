@@ -16,6 +16,7 @@ import com.vovremya.alarm.data.SyncResult
 import com.vovremya.alarm.data.ThemeMode
 import com.vovremya.alarm.data.UpdateChannel
 import com.vovremya.alarm.localization.tr
+import com.vovremya.alarm.update.AvailableRelease
 import com.vovremya.alarm.update.UpdateCheckResult
 import java.time.DayOfWeek
 import java.time.Instant
@@ -41,6 +42,9 @@ data class MainUiState(
     val lastError: String? = null,
     val diagnostics: SyncDiagnostics? = null,
     val githubConfigured: Boolean = BuildConfig.GITHUB_REPOSITORY.isNotBlank(),
+    val availableReleases: List<AvailableRelease> = emptyList(),
+    val releaseCatalogLoading: Boolean = false,
+    val downloadingReleaseTag: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,6 +54,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val message = MutableStateFlow<String?>(null)
     private val lastError = MutableStateFlow<String?>(null)
     private val diagnostics = MutableStateFlow<SyncDiagnostics?>(null)
+    private val availableReleases = MutableStateFlow<List<AvailableRelease>>(emptyList())
+    private val releaseCatalogLoading = MutableStateFlow(false)
+    private val downloadingReleaseTag = MutableStateFlow<String?>(null)
     private var calendarObserverJob: Job? = null
     private var initialRemoteSyncRequested = false
 
@@ -77,6 +84,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         .combine(lastError) { state, error -> state.copy(lastError = error) }
         .combine(diagnostics) { state, currentDiagnostics -> state.copy(diagnostics = currentDiagnostics) }
+        .combine(availableReleases) { state, releases -> state.copy(availableReleases = releases) }
+        .combine(releaseCatalogLoading) { state, loading -> state.copy(releaseCatalogLoading = loading) }
+        .combine(downloadingReleaseTag) { state, tag -> state.copy(downloadingReleaseTag = tag) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     fun onCalendarPermissionAvailable() {
@@ -202,6 +212,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         container.settingsStore.setAlarmVibrationEnabled(enabled)
     }
 
+    fun setReminderVibrationEnabled(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setReminderVibrationEnabled(enabled)
+    }
+
     fun setAlarmSoundUri(uri: String?) = updateAndSync {
         container.settingsStore.setAlarmSoundUri(uri)
     }
@@ -303,9 +317,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 UpdateCheckResult.UpToDate -> tr("Установлена последняя версия")
                 UpdateCheckResult.NoApkAsset -> tr("В последнем релизе нет APK")
                 UpdateCheckResult.NotDue -> tr("Установлена последняя версия")
-                is UpdateCheckResult.Downloaded -> tr("Версия %s загружена", result.version)
+                is UpdateCheckResult.Downloaded -> downloadMessage(result)
                 is UpdateCheckResult.Failed -> tr("Обновление: %s", result.reason)
             }
+        }
+    }
+
+    fun loadReleaseCatalog() {
+        if (releaseCatalogLoading.value) return
+        viewModelScope.launch {
+            releaseCatalogLoading.value = true
+            container.updateManager.loadReleaseCatalog()
+                .onSuccess { releases ->
+                    availableReleases.value = releases
+                    if (releases.isEmpty()) message.value = tr("В GitHub Releases пока нет APK")
+                }
+                .onFailure { error ->
+                    message.value = tr("Не удалось загрузить список версий: %s", error.message.orEmpty())
+                }
+            releaseCatalogLoading.value = false
+        }
+    }
+
+    fun downloadRelease(release: AvailableRelease) {
+        if (downloadingReleaseTag.value != null) return
+        viewModelScope.launch {
+            downloadingReleaseTag.value = release.tag
+            message.value = when (val result = container.updateManager.downloadRelease(release)) {
+                is UpdateCheckResult.Downloaded -> downloadMessage(result)
+                is UpdateCheckResult.Failed -> tr("Загрузка версии %s: %s", release.version, result.reason)
+                else -> tr("Не удалось загрузить версию %s", release.version)
+            }
+            downloadingReleaseTag.value = null
         }
     }
 
@@ -319,6 +362,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             syncNow(showMessage = false)
         }
     }
+
+    private fun downloadMessage(result: UpdateCheckResult.Downloaded): String =
+        if (result.isDowngrade) {
+            tr("Старая версия %s загружена. Android не установит её поверх новой", result.version)
+        } else {
+            tr("Версия %s загружена", result.version)
+        }
 
     private fun syncMessage(result: SyncResult): String {
         val d = result.diagnostics

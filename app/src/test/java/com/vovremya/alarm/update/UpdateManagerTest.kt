@@ -39,4 +39,41 @@ class UpdateManagerTest {
         assertEquals(1, manager.compareVersions("1.5.0-beta.2", "1.5.0-beta.1"))
         assertEquals(-1, manager.compareVersions("1.5.0-beta.1", "1.5.0"))
     }
+
+    @Test
+    fun `release catalog contains stable and beta apk releases but not drafts`() {
+        val releases = JSONArray(
+            """
+            [
+              {
+                "tag_name":"v1.4.0",
+                "name":"Stable 1.4.0",
+                "draft":false,
+                "prerelease":false,
+                "assets":[{"name":"app-release.apk","browser_download_url":"https://example.test/stable.apk"}]
+              },
+              {
+                "tag_name":"v1.6.0-beta.1",
+                "name":"Beta 1.6.0",
+                "draft":false,
+                "prerelease":true,
+                "assets":[{"name":"app-release.apk","browser_download_url":"https://example.test/beta.apk"}]
+              },
+              {
+                "tag_name":"v9.0.0",
+                "draft":true,
+                "prerelease":false,
+                "assets":[{"name":"app-release.apk","browser_download_url":"https://example.test/draft.apk"}]
+              },
+              {"tag_name":"v1.3.0","draft":false,"prerelease":false,"assets":[]}
+            ]
+            """.trimIndent(),
+        )
+
+        val catalog = manager.parseAvailableReleases(releases)
+
+        assertEquals(listOf("1.6.0-beta.1", "1.4.0"), catalog.map { it.version })
+        assertEquals(listOf(true, false), catalog.map { it.prerelease })
+        assertEquals(listOf(ReleaseRelation.NEWER, ReleaseRelation.OLDER), catalog.map { it.relation })
+    }
 }

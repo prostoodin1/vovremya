@@ -95,11 +95,13 @@ class AlarmActivity : ComponentActivity() {
             tr(if (isReminder) "Напоминание о событии" else "Пора собираться")
         }
         val soundEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
-        val vibrationEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        val vibrationEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
         val soundUri = intent.getStringExtra(AlarmPayload.EXTRA_SOUND_URI).orEmpty()
         val snoozeMinutes = intent.getIntExtra(AlarmPayload.EXTRA_SNOOZE_MINUTES, 10).coerceIn(1, 120)
         val autoSilenceMinutes = intent.getIntExtra(AlarmPayload.EXTRA_AUTO_SILENCE_MINUTES, 10).coerceIn(1, 60)
-        if (!isReminder) startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes)
+        if (!isReminder || vibrationEnabled) {
+            startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes)
+        }
         setContent {
             val settings by (application as VovremyaApplication).container.settingsStore.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
@@ -116,6 +118,7 @@ class AlarmActivity : ComponentActivity() {
                     location = location,
                     snoozeMinutes = snoozeMinutes,
                     isReminder = isReminder,
+                    vibrationEnabled = vibrationEnabled,
                     onDismiss = { stopAndClose(key) },
                     onSnooze = {
                         snooze(
@@ -223,6 +226,7 @@ private fun AlarmScreen(
     location: String?,
     snoozeMinutes: Int,
     isReminder: Boolean,
+    vibrationEnabled: Boolean,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
@@ -270,7 +274,13 @@ private fun AlarmScreen(
             }
             Spacer(Modifier.height(40.dp))
             Text(
-                tr(if (isReminder) "ТИХОЕ НАПОМИНАНИЕ" else "ПОРА СОБИРАТЬСЯ"),
+                tr(
+                    when {
+                        !isReminder -> "ПОРА СОБИРАТЬСЯ"
+                        vibrationEnabled -> "НАПОМИНАНИЕ · ВИБРАЦИЯ"
+                        else -> "ТИХОЕ НАПОМИНАНИЕ"
+                    },
+                ),
                 color = primary,
                 fontWeight = FontWeight.SemiBold,
             )

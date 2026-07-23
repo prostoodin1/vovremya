@@ -50,7 +50,7 @@ class EventSelectorTest {
     }
 
     @Test
-    fun `uses later event when first alarm time has already passed`() {
+    fun `keeps later event as reminder when first alarm time has already passed`() {
         val now = time(2026, 7, 15, 8, 0)
         val events = listOf(
             event(1, time(2026, 7, 15, 9, 0)),
@@ -63,7 +63,7 @@ class EventSelectorTest {
         assertEquals(time(2026, 7, 15, 9, 30), result.alarms.single().alarmAtMillis)
         assertEquals(1, result.excludedPastAlarm)
         assertEquals(
-            listOf(EventDecision.ALARM_PASSED, EventDecision.ALARM_CREATED),
+            listOf(EventDecision.ALARM_PASSED, EventDecision.REMINDER_CREATED),
             result.eventDiagnostics.map { it.decision },
         )
     }
@@ -90,12 +90,12 @@ class EventSelectorTest {
 
         val result = EventSelector.select(events, settings, now, zone)
 
-        assertEquals(listOf(5L), result.alarms.map { it.eventId })
+        assertEquals(emptyList<Long>(), result.alarms.map { it.eventId })
         assertEquals(1, result.excludedCalendar)
         assertEquals(1, result.excludedDay)
         assertEquals(1, result.excludedCutoff)
         assertEquals(1, result.excludedPastAlarm)
-        assertEquals(1, result.extraSameDay)
+        assertEquals(2, result.extraSameDay)
     }
 
     @Test
@@ -120,6 +120,59 @@ class EventSelectorTest {
         )
         assertEquals(listOf(true, false), result.alarms.map { it.soundEnabled })
         assertEquals(listOf(true, false), result.alarms.map { it.vibrationEnabled })
+        assertEquals(0, result.extraSameDay)
+    }
+
+    @Test
+    fun `later events use optional vibration without becoming alarms`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val events = listOf(
+            event(3, time(2026, 7, 15, 14, 0)),
+            event(1, time(2026, 7, 15, 9, 0)),
+            event(2, time(2026, 7, 15, 11, 0)),
+        )
+
+        val result = EventSelector.select(
+            events,
+            AppSettings(
+                leadMinutes = 30,
+                allEventsPerDay = true,
+                reminderVibrationEnabled = true,
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(1, result.alarms.count { it.delivery == AlarmDelivery.ALARM })
+        assertEquals(2, result.alarms.count { it.delivery == AlarmDelivery.SILENT_REMINDER })
+        assertEquals(listOf(true, true, true), result.alarms.map { it.vibrationEnabled })
+        assertEquals(listOf(true, false, false), result.alarms.map { it.soundEnabled })
+    }
+
+    @Test
+    fun `past first alarm never promotes a later event to full alarm`() {
+        val now = time(2026, 7, 15, 10, 0)
+        val events = listOf(
+            event(1, time(2026, 7, 15, 10, 15)),
+            event(2, time(2026, 7, 15, 11, 0)),
+        )
+
+        val result = EventSelector.select(
+            events,
+            AppSettings(
+                leadMinutes = 30,
+                allEventsPerDay = true,
+                reminderVibrationEnabled = true,
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(listOf(2L), result.alarms.map { it.eventId })
+        assertEquals(AlarmDelivery.SILENT_REMINDER, result.alarms.single().delivery)
+        assertEquals(false, result.alarms.single().soundEnabled)
+        assertEquals(true, result.alarms.single().vibrationEnabled)
+        assertEquals(1, result.excludedPastAlarm)
         assertEquals(0, result.extraSameDay)
     }
 

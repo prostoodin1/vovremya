@@ -90,11 +90,6 @@ object EventSelector {
                     return@forEach
                 }
                 val alarmAt = effectiveStartMillis - settings.leadMinutes * 60_000L
-                if (alarmAt <= nowMillis) {
-                    excludedPastAlarm++
-                    diagnostics += event.toDiagnostic(EventDecision.ALARM_PASSED)
-                    return@forEach
-                }
                 add(EligibleEvent(event, start.toLocalDate(), effectiveStartMillis, alarmAt))
             }
         }
@@ -111,7 +106,7 @@ object EventSelector {
                     )
                 }
             }
-        val alarms = selected.map { selection ->
+        val alarms = selected.filter { it.eligible.alarmAtMillis > nowMillis }.map { selection ->
             val selectedEvent = selection.eligible
             val event = selectedEvent.event
             val isAlarm = selection.delivery == AlarmDelivery.ALARM
@@ -128,7 +123,11 @@ object EventSelector {
                 allDay = event.allDay,
                 delivery = selection.delivery,
                 soundEnabled = isAlarm && settings.alarmSoundEnabled,
-                vibrationEnabled = isAlarm && settings.alarmVibrationEnabled,
+                vibrationEnabled = if (isAlarm) {
+                    settings.alarmVibrationEnabled
+                } else {
+                    settings.reminderVibrationEnabled
+                },
                 soundUri = settings.alarmSoundUri,
                 snoozeMinutes = settings.snoozeMinutes,
                 autoSilenceMinutes = settings.autoSilenceMinutes,
@@ -140,13 +139,18 @@ object EventSelector {
         }
         eligible.forEach { eligibleEvent ->
             val event = eligibleEvent.event
-            diagnostics += event.toDiagnostic(
-                when (deliveryByKey[event.eventId to event.instanceStartMillis]) {
-                    AlarmDelivery.ALARM -> EventDecision.ALARM_CREATED
-                    AlarmDelivery.SILENT_REMINDER -> EventDecision.REMINDER_CREATED
-                    null -> EventDecision.EXTRA_SAME_DAY
-                },
-            )
+            if (eligibleEvent.alarmAtMillis <= nowMillis) {
+                excludedPastAlarm++
+                diagnostics += event.toDiagnostic(EventDecision.ALARM_PASSED)
+            } else {
+                diagnostics += event.toDiagnostic(
+                    when (deliveryByKey[event.eventId to event.instanceStartMillis]) {
+                        AlarmDelivery.ALARM -> EventDecision.ALARM_CREATED
+                        AlarmDelivery.SILENT_REMINDER -> EventDecision.REMINDER_CREATED
+                        null -> EventDecision.EXTRA_SAME_DAY
+                    },
+                )
+            }
         }
         return Result(
             alarms = alarms,
@@ -156,7 +160,7 @@ object EventSelector {
             excludedCutoff = excludedCutoff,
             excludedPastAlarm = excludedPastAlarm,
             excludedUserSkipped = excludedUserSkipped,
-            extraSameDay = eligible.size - alarms.size,
+            extraSameDay = eligible.size - selected.size,
             eventDiagnostics = diagnostics,
         )
     }

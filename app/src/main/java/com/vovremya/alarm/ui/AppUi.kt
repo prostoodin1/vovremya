@@ -132,6 +132,8 @@ import com.vovremya.alarm.localization.appLocale
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.Mint
 import com.vovremya.alarm.ui.theme.previewColor
+import com.vovremya.alarm.update.AvailableRelease
+import com.vovremya.alarm.update.ReleaseRelation
 import java.time.DayOfWeek
 import java.time.Duration
 import java.time.Instant
@@ -173,6 +175,7 @@ fun MainApp(
     onAllDayEventMinutes: (Int) -> Unit,
     onAlarmSoundEnabled: (Boolean) -> Unit,
     onAlarmVibrationEnabled: (Boolean) -> Unit,
+    onReminderVibrationEnabled: (Boolean) -> Unit,
     onPickAlarmSound: () -> Unit,
     onSnoozeMinutes: (Int) -> Unit,
     onAutoSilenceMinutes: (Int) -> Unit,
@@ -190,6 +193,8 @@ fun MainApp(
     onCustomAccentColor: (Int) -> Unit,
     onBackgroundStyle: (BackgroundStyle) -> Unit,
     onCheckUpdates: () -> Unit,
+    onLoadReleaseCatalog: () -> Unit,
+    onDownloadRelease: (AvailableRelease) -> Unit,
     onMessageShown: () -> Unit,
 ) {
     var screen by rememberSaveable { mutableStateOf(Screen.Home) }
@@ -258,6 +263,7 @@ fun MainApp(
                     onAllDayEventMinutes = onAllDayEventMinutes,
                     onAlarmSoundEnabled = onAlarmSoundEnabled,
                     onAlarmVibrationEnabled = onAlarmVibrationEnabled,
+                    onReminderVibrationEnabled = onReminderVibrationEnabled,
                     onPickAlarmSound = onPickAlarmSound,
                     onSnoozeMinutes = onSnoozeMinutes,
                     onAutoSilenceMinutes = onAutoSilenceMinutes,
@@ -271,6 +277,8 @@ fun MainApp(
                     onCustomAccentColor = onCustomAccentColor,
                     onBackgroundStyle = onBackgroundStyle,
                     onCheckUpdates = onCheckUpdates,
+                    onLoadReleaseCatalog = onLoadReleaseCatalog,
+                    onDownloadRelease = onDownloadRelease,
                     onSync = onSync,
                     onRequestCalendar = onRequestCalendar,
                     onRequestExactAlarms = onRequestExactAlarms,
@@ -325,7 +333,7 @@ private fun HomeScreen(
             }
         }
         item {
-            val next = state.alarms.firstOrNull()
+            val next = state.alarms.firstOrNull { it.delivery == AlarmDelivery.ALARM }
             NextAlarmCard(
                 alarm = next,
                 revealed = next != null && revealedAlarm == "next:${next.key}",
@@ -444,10 +452,27 @@ private fun HomeHeader(onSettings: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(tr("Вовремя"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-            Text(
-                LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", APP_LOCALE)).replaceFirstChar { it.uppercase() },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", APP_LOCALE)).replaceFirstChar { it.uppercase() },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (BuildConfig.VERSION_NAME.removeSuffix("-debug").contains('-')) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            "BETA",
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
         }
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
             IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Настройки")) }
@@ -642,7 +667,13 @@ private fun AlarmRow(
                         )
                         Spacer(Modifier.width(7.dp))
                         Text(
-                            tr(if (reminder) "Тихое напоминание · без звука и вибрации" else "Будильник · звук по настройкам"),
+                            tr(
+                                when {
+                                    !reminder -> "Будильник · звук по настройкам"
+                                    alarm.vibrationEnabled -> "Напоминание · только вибрация"
+                                    else -> "Тихое напоминание · без звука и вибрации"
+                                },
+                            ),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -810,6 +841,7 @@ private fun SettingsScreen(
     onAllDayEventMinutes: (Int) -> Unit,
     onAlarmSoundEnabled: (Boolean) -> Unit,
     onAlarmVibrationEnabled: (Boolean) -> Unit,
+    onReminderVibrationEnabled: (Boolean) -> Unit,
     onPickAlarmSound: () -> Unit,
     onSnoozeMinutes: (Int) -> Unit,
     onAutoSilenceMinutes: (Int) -> Unit,
@@ -823,6 +855,8 @@ private fun SettingsScreen(
     onCustomAccentColor: (Int) -> Unit,
     onBackgroundStyle: (BackgroundStyle) -> Unit,
     onCheckUpdates: () -> Unit,
+    onLoadReleaseCatalog: () -> Unit,
+    onDownloadRelease: (AvailableRelease) -> Unit,
     onSync: () -> Unit,
     onRequestCalendar: () -> Unit,
     onRequestExactAlarms: () -> Unit,
@@ -830,6 +864,7 @@ private fun SettingsScreen(
     var showLeadDialog by rememberSaveable { mutableStateOf(false) }
     var showColorDialog by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
+    var releasesExpanded by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val selectedCalendars = state.calendars.filter { calendar ->
         state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds
@@ -988,10 +1023,26 @@ private fun SettingsScreen(
             SettingsCard(Icons.Rounded.NotificationsActive, tr("Будильники"), tr("События, звук и повтор сигнала")) {
                 ToggleRow(
                     title = tr("Напоминать об остальных событиях"),
-                    subtitle = tr(if (state.settings.allEventsPerDay) "Первое событие — будильник, остальные — без звука и вибрации" else "Только первое событие дня с будильником"),
+                    subtitle = tr(if (state.settings.allEventsPerDay) "Первое событие — будильник, остальные — экран без звука" else "Только первое событие дня с будильником"),
                     checked = state.settings.allEventsPerDay,
                     onChecked = onAllEventsPerDay,
                 )
+                AnimatedVisibility(
+                    visible = state.settings.allEventsPerDay,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                    ),
+                ) {
+                    ToggleRow(
+                        title = tr("Вибрация для остальных событий"),
+                        subtitle = tr("Только вибрация, без звука"),
+                        checked = state.settings.reminderVibrationEnabled,
+                        onChecked = onReminderVibrationEnabled,
+                    )
+                }
                 ToggleRow(
                     title = tr("События на весь день"),
                     subtitle = tr("Использовать для них выбранное условное время"),
@@ -1293,6 +1344,65 @@ private fun SettingsScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(tr(if (state.githubConfigured) "Проверить обновления" else "Репозиторий не настроен"))
                 }
+                HorizontalDivider()
+                SettingsActionRow(
+                    title = tr("Все версии"),
+                    subtitle = tr("Скачать стабильную или бета-версию из архива"),
+                    onClick = {
+                        releasesExpanded = !releasesExpanded
+                        if (releasesExpanded && state.availableReleases.isEmpty()) onLoadReleaseCatalog()
+                    },
+                    expanded = releasesExpanded,
+                )
+                AnimatedVisibility(
+                    visible = releasesExpanded,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                    ),
+                    exit = fadeOut(tween(160)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                    ),
+                ) {
+                    val beta = state.settings.updateChannel == UpdateChannel.BETA
+                    val releases = state.availableReleases.filter { it.prerelease == beta }
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            tr(if (beta) "Архив бета-версий" else "Архив стабильных версий"),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            tr("Старую версию можно скачать, но Android не установит её поверх более новой."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        when {
+                            state.releaseCatalogLoading -> CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.CenterHorizontally).size(28.dp),
+                                strokeWidth = 3.dp,
+                            )
+                            releases.isEmpty() -> {
+                                Text(
+                                    tr("В выбранном канале пока нет версий с APK"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                OutlinedButton(
+                                    onClick = onLoadReleaseCatalog,
+                                    enabled = state.githubConfigured,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text(tr("Обновить список")) }
+                            }
+                            else -> releases.take(20).forEach { release ->
+                                ReleaseDownloadRow(
+                                    release = release,
+                                    downloading = state.downloadingReleaseTag == release.tag,
+                                    downloadEnabled = state.downloadingReleaseTag == null,
+                                    onDownload = { onDownloadRelease(release) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         item {
@@ -1429,6 +1539,52 @@ private fun MinuteChoiceChips(current: Int, choices: List<Int>, onChange: (Int) 
                 onClick = { onChange(minutes) },
                 label = { Text(tr("%d мин", minutes)) },
             )
+        }
+    }
+}
+
+@Composable
+private fun ReleaseDownloadRow(
+    release: AvailableRelease,
+    downloading: Boolean,
+    downloadEnabled: Boolean,
+    onDownload: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(release.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    tr(
+                        when (release.relation) {
+                            ReleaseRelation.NEWER -> "Версия %s · новее установленной"
+                            ReleaseRelation.CURRENT -> "Версия %s · установлена"
+                            ReleaseRelation.OLDER -> "Версия %s · старая"
+                        },
+                        release.version,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (release.relation == ReleaseRelation.NEWER) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            FilledTonalButton(onClick = onDownload, enabled = downloadEnabled) {
+                if (downloading) {
+                    CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(tr(if (release.relation == ReleaseRelation.CURRENT) "Скачать снова" else "Скачать"))
+                }
+            }
         }
     }
 }

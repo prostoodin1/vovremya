@@ -57,12 +57,18 @@ class NotificationHelper(private val context: Context) {
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
         }
-        val reminders = NotificationChannel(
-            REMINDER_CHANNEL,
-            tr("Тихие напоминания"),
+        val reminderChannels = listOf(
+            REMINDER_CHANNEL to false,
+            REMINDER_VIBRATION_CHANNEL to true,
+        ).map { (id, vibration) -> NotificationChannel(
+            id,
+            tr(if (vibration) "Напоминания с вибрацией" else "Тихие напоминания"),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = tr("Экран для последующих событий без звука и вибрации")
+            description = tr(
+                if (vibration) "Экран для последующих событий: только вибрация, без звука"
+                else "Экран для последующих событий без звука и вибрации",
+            )
             val silentAudio = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -70,10 +76,10 @@ class NotificationHelper(private val context: Context) {
             // A non-null, empty URI keeps Android's full-screen alert path enabled
             // while producing no audible media or audio file playback.
             setSound(Uri.EMPTY, silentAudio)
-            enableVibration(false)
-            vibrationPattern = null
+            enableVibration(vibration)
+            vibrationPattern = if (vibration) longArrayOf(0, 700, 350, 700) else null
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-        }
+        } }
         val planning = NotificationChannel(
             PLANNING_CHANNEL,
             context.getString(R.string.sync_channel),
@@ -87,7 +93,7 @@ class NotificationHelper(private val context: Context) {
             description = tr("Новые версии из GitHub Releases")
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
-        systemManager.createNotificationChannels(alarmChannels + listOf(reminders, planning, updates))
+        systemManager.createNotificationChannels(alarmChannels + reminderChannels + listOf(planning, updates))
     }
 
     fun showAlarm(intent: Intent) {
@@ -103,7 +109,7 @@ class NotificationHelper(private val context: Context) {
             tr(if (isReminder) "Напоминание о событии" else "Пора собираться")
         }
         val soundEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
-        val vibrationEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        val vibrationEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
         val fullScreen = Intent(context, AlarmActivity::class.java).apply {
             putExtras(intent)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -120,7 +126,7 @@ class NotificationHelper(private val context: Context) {
         }
         val notification = NotificationCompat.Builder(
             context,
-            if (isReminder) REMINDER_CHANNEL else alarmChannelId(soundEnabled, vibrationEnabled),
+            if (isReminder) reminderChannelId(vibrationEnabled) else alarmChannelId(soundEnabled, vibrationEnabled),
         )
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -141,7 +147,7 @@ class NotificationHelper(private val context: Context) {
     fun showPlanningSummary(result: SyncResult) {
         if (!canNotify()) return
         val alarms = result.alarms
-        val next = alarms.firstOrNull()
+        val next = alarms.firstOrNull { it.delivery == AlarmDelivery.ALARM }
         val title = tr(if (next == null) "На ближайшие дни будильников нет" else "Будильник готов")
         val body = if (next == null) {
             when {
@@ -173,7 +179,7 @@ class NotificationHelper(private val context: Context) {
         )
     }
 
-    fun showUpdate(version: String, apk: File) {
+    fun showUpdate(version: String, apk: File, isDowngrade: Boolean = false) {
         if (!canNotify()) return
         val install = PendingIntent.getActivity(
             context,
@@ -181,11 +187,18 @@ class NotificationHelper(private val context: Context) {
             Intent(context, UpdateInstallerActivity::class.java).apply {
                 putExtra(UpdateInstallerActivity.EXTRA_APK_PATH, apk.absolutePath)
                 putExtra(UpdateInstallerActivity.EXTRA_VERSION, version)
+                putExtra(UpdateInstallerActivity.EXTRA_IS_DOWNGRADE, isDowngrade)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val body = tr("Нажмите, чтобы подтвердить установку обновления")
+        val body = tr(
+            if (isDowngrade) {
+                "Старая версия загружена; Android не установит её поверх новой"
+            } else {
+                "Нажмите, чтобы подтвердить установку обновления"
+            },
+        )
         notifySafely(
             UPDATE_NOTIFICATION_ID,
             NotificationCompat.Builder(context, UPDATE_CHANNEL)
@@ -231,6 +244,9 @@ class NotificationHelper(private val context: Context) {
         else -> ALARM_CHANNEL_SILENT
     }
 
+    private fun reminderChannelId(vibration: Boolean): String =
+        if (vibration) REMINDER_VIBRATION_CHANNEL else REMINDER_CHANNEL
+
     private fun alarmModeName(sound: Boolean, vibration: Boolean): String = when {
         sound && vibration -> tr("звук и вибрация")
         sound -> tr("только звук")
@@ -252,6 +268,7 @@ class NotificationHelper(private val context: Context) {
         const val ALARM_CHANNEL_VIBRATION = "event_alarms_vibration_v2"
         const val ALARM_CHANNEL_SILENT = "event_alarms_silent_v2"
         const val REMINDER_CHANNEL = "event_reminders_silent_full_screen_v2"
+        const val REMINDER_VIBRATION_CHANNEL = "event_reminders_vibration_full_screen_v1"
         const val PLANNING_CHANNEL = "daily_planning"
         const val UPDATE_CHANNEL = "github_updates_full_screen_v2"
         private const val PLANNING_NOTIFICATION_ID = 1900

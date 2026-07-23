@@ -33,7 +33,7 @@ class SilentReminderNotificationTest {
             putExtra(AlarmPayload.EXTRA_EVENT_START, 123_456L)
             putExtra(AlarmPayload.EXTRA_DELIVERY, AlarmDelivery.SILENT_REMINDER.name)
             putExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
-            putExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+            putExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, false)
         }
 
         helper.showAlarm(intent)
@@ -51,5 +51,33 @@ class SilentReminderNotificationTest {
         assertNotNull(notification.fullScreenIntent)
         assertEquals(AlarmActivity::class.java.name, launchIntent.component?.className)
         assertEquals(AlarmDelivery.SILENT_REMINDER.name, launchIntent.getStringExtra(AlarmPayload.EXTRA_DELIVERY))
+    }
+
+    @Test
+    fun `later event can use vibration only channel`() {
+        val application = RuntimeEnvironment.getApplication()
+        shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val helper = NotificationHelper(application)
+        helper.createChannels()
+        val intent = Intent().apply {
+            putExtra(AlarmPayload.EXTRA_KEY, "vibrating-later-event")
+            putExtra(AlarmPayload.EXTRA_TITLE, "Later event")
+            putExtra(AlarmPayload.EXTRA_EVENT_START, 123_456L)
+            putExtra(AlarmPayload.EXTRA_DELIVERY, AlarmDelivery.SILENT_REMINDER.name)
+            putExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
+            putExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        }
+
+        helper.showAlarm(intent)
+
+        val manager = application.getSystemService(NotificationManager::class.java)
+        val channel = manager.getNotificationChannel(NotificationHelper.REMINDER_VIBRATION_CHANNEL)
+        val notification = shadowOf(manager).allNotifications.single()
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)
+        assertEquals(Uri.EMPTY, channel.sound)
+        assertEquals(true, channel.shouldVibrate())
+        assertEquals(NotificationHelper.REMINDER_VIBRATION_CHANNEL, notification.channelId)
+        assertNull(notification.sound)
+        assertNotNull(notification.fullScreenIntent)
     }
 }

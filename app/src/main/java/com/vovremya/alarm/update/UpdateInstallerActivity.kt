@@ -64,6 +64,7 @@ class UpdateInstallerActivity : ComponentActivity() {
         showAboveLockScreen()
         apkPath = intent.getStringExtra(EXTRA_APK_PATH)
         val version = intent.getStringExtra(EXTRA_VERSION).orEmpty().ifBlank { "—" }
+        val isDowngrade = intent.getBooleanExtra(EXTRA_IS_DOWNGRADE, false)
         setContent {
             var installing by rememberSaveable { mutableStateOf(false) }
             var visible by rememberSaveable { mutableStateOf(false) }
@@ -130,7 +131,13 @@ class UpdateInstallerActivity : ComponentActivity() {
                                     textAlign = TextAlign.Center,
                                 )
                                 Text(
-                                    tr("Установить сейчас? Android покажет системное подтверждение."),
+                                    tr(
+                                        if (isDowngrade) {
+                                            "Это старая версия. Android не установит её поверх более новой."
+                                        } else {
+                                            "Установить сейчас? Android покажет системное подтверждение."
+                                        },
+                                    ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
@@ -238,5 +245,6 @@ class UpdateInstallerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_APK_PATH = "apk_path"
         const val EXTRA_VERSION = "version"
+        const val EXTRA_IS_DOWNGRADE = "is_downgrade"
     }
 }

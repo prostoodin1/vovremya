@@ -19,6 +19,23 @@ class UpdateManager(
     private val context: Context,
     private val notificationHelper: NotificationHelper,
 ) {
+    suspend fun loadReleaseCatalog(): Result<List<AvailableRelease>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val repository = configuredRepository()
+            val releases = requestJsonArray("https://api.github.com/repos/$repository/releases?per_page=50")
+            parseAvailableReleases(releases)
+        }
+    }
+
+    suspend fun downloadRelease(release: AvailableRelease): UpdateCheckResult = withContext(Dispatchers.IO) {
+        downloadAndPrepare(
+            version = release.version,
+            apkUrl = release.apkUrl,
+            requireNewerVersion = false,
+            isDowngrade = release.relation == ReleaseRelation.OLDER,
+        )
+    }
+
     suspend fun checkAndDownloadUpdate(
         force: Boolean = true,
         allowPrerelease: Boolean = false,
@@ -29,11 +46,9 @@ class UpdateManager(
             return@withContext UpdateCheckResult.NotDue
         }
         if (!force) preferences.edit().putLong(KEY_LAST_CHECK, now).apply()
-        val repository = BuildConfig.GITHUB_REPOSITORY.trim().trim('/')
-        if (!repository.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) {
+        val repository = runCatching(::configuredRepository).getOrElse {
             return@withContext UpdateCheckResult.NotConfigured
         }
-        var temporary: File? = null
         runCatching {
             val releases = requestJsonArray("https://api.github.com/repos/$repository/releases?per_page=30")
             val release = selectRelease(releases, allowPrerelease)
@@ -48,21 +63,49 @@ class UpdateManager(
                 .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
                 ?.getString("browser_download_url")
                 ?: return@runCatching UpdateCheckResult.NoApkAsset
+            downloadAndPrepare(
+                version = version,
+                apkUrl = apkUrl,
+                requireNewerVersion = true,
+                isDowngrade = false,
+            )
+        }.getOrElse {
+            UpdateCheckResult.Failed(it.message ?: "Ошибка сети")
+        }
+    }
+
+    private fun configuredRepository(): String {
+        val repository = BuildConfig.GITHUB_REPOSITORY.trim().trim('/')
+        check(repository.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) {
+            "GitHub-репозиторий не настроен"
+        }
+        return repository
+    }
+
+    private fun downloadAndPrepare(
+        version: String,
+        apkUrl: String,
+        requireNewerVersion: Boolean,
+        isDowngrade: Boolean,
+    ): UpdateCheckResult {
+        var temporary: File? = null
+        return runCatching {
             val directory = context.getExternalFilesDir("updates") ?: context.filesDir.resolve("updates")
             directory.mkdirs()
-            val apk = directory.resolve("vovremya-$version.apk")
+            val safeVersion = version.replace(Regex("[^A-Za-z0-9._-]"), "-")
+            val apk = directory.resolve("vovremya-$safeVersion.apk")
             val downloadFile = directory.resolve(".${apk.name}.download")
             temporary = downloadFile
             downloadFile.delete()
             download(apkUrl, downloadFile)
-            validateDownloadedApk(downloadFile)
+            validateDownloadedApk(downloadFile, requireNewerVersion)
             if (apk.exists()) apk.delete()
             check(downloadFile.renameTo(apk)) { "Не удалось сохранить APK" }
-            notificationHelper.showUpdate(version, apk)
-            UpdateCheckResult.Downloaded(version, apk)
+            notificationHelper.showUpdate(version, apk, isDowngrade)
+            UpdateCheckResult.Downloaded(version, apk, isDowngrade)
         }.getOrElse {
             temporary?.delete()
-            UpdateCheckResult.Failed(it.message ?: "Ошибка сети")
+            UpdateCheckResult.Failed(it.message ?: "Ошибка загрузки")
         }
     }
 
@@ -90,6 +133,36 @@ class UpdateManager(
                 },
             )
 
+    internal fun parseAvailableReleases(releases: JSONArray): List<AvailableRelease> =
+        (0 until releases.length())
+            .map(releases::getJSONObject)
+            .filterNot { it.optBoolean("draft", false) }
+            .mapNotNull { release ->
+                val tag = release.optString("tag_name")
+                val version = tag.removePrefix("v")
+                if (version.isBlank()) return@mapNotNull null
+                val assets = release.optJSONArray("assets") ?: return@mapNotNull null
+                val apk = (0 until assets.length())
+                    .map(assets::getJSONObject)
+                    .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
+                    ?: return@mapNotNull null
+                val comparison = compareVersions(version, BuildConfig.VERSION_NAME.removeSuffix("-debug"))
+                AvailableRelease(
+                    tag = tag,
+                    version = version,
+                    name = release.optString("name").ifBlank { tag },
+                    prerelease = release.optBoolean("prerelease", false),
+                    publishedAt = release.optString("published_at"),
+                    apkUrl = apk.optString("browser_download_url"),
+                    relation = when {
+                        comparison > 0 -> ReleaseRelation.NEWER
+                        comparison < 0 -> ReleaseRelation.OLDER
+                        else -> ReleaseRelation.CURRENT
+                    },
+                ).takeIf { it.apkUrl.startsWith("https://") }
+            }
+            .sortedWith { left, right -> compareVersions(right.version, left.version) }
+
     private fun download(url: String, destination: File) {
         val connection = open(url)
         try {
@@ -112,7 +185,7 @@ class UpdateManager(
     }
 
     @Suppress("DEPRECATION")
-    private fun validateDownloadedApk(apk: File) {
+    private fun validateDownloadedApk(apk: File, requireNewerVersion: Boolean) {
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             PackageManager.GET_SIGNING_CERTIFICATES
         } else {
@@ -121,7 +194,9 @@ class UpdateManager(
         val archive = context.packageManager.getPackageArchiveInfo(apk.absolutePath, flags)
             ?: error("Загруженный файл не является APK")
         check(archive.packageName == context.packageName) { "APK выпущен для другого приложения" }
-        check(versionCode(archive) > BuildConfig.VERSION_CODE) { "В APK нет более новой версии" }
+        if (requireNewerVersion) {
+            check(versionCode(archive) > BuildConfig.VERSION_CODE) { "В APK нет более новой версии" }
+        }
 
         val installed = context.packageManager.getPackageInfo(context.packageName, flags)
         val archiveCertificates = certificateDigests(archive)
@@ -202,6 +277,22 @@ sealed interface UpdateCheckResult {
     data object UpToDate : UpdateCheckResult
     data object NoApkAsset : UpdateCheckResult
     data object NotDue : UpdateCheckResult
-    data class Downloaded(val version: String, val file: File) : UpdateCheckResult
+    data class Downloaded(
+        val version: String,
+        val file: File,
+        val isDowngrade: Boolean = false,
+    ) : UpdateCheckResult
     data class Failed(val reason: String) : UpdateCheckResult
 }
+
+data class AvailableRelease(
+    val tag: String,
+    val version: String,
+    val name: String,
+    val prerelease: Boolean,
+    val publishedAt: String,
+    val apkUrl: String,
+    val relation: ReleaseRelation,
+)
+
+enum class ReleaseRelation { NEWER, CURRENT, OLDER }
