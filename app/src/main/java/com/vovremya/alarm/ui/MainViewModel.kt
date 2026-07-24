@@ -47,6 +47,7 @@ data class MainUiState(
     val availableReleases: List<AvailableRelease> = emptyList(),
     val releaseCatalogLoading: Boolean = false,
     val downloadingReleaseTag: String? = null,
+    val downloadedReleaseTags: Set<String> = emptySet(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -59,6 +60,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val availableReleases = MutableStateFlow<List<AvailableRelease>>(emptyList())
     private val releaseCatalogLoading = MutableStateFlow(false)
     private val downloadingReleaseTag = MutableStateFlow<String?>(null)
+    private val downloadedReleaseTags = MutableStateFlow<Set<String>>(emptySet())
     private var calendarObserverJob: Job? = null
     private var initialRemoteSyncRequested = false
 
@@ -89,6 +91,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .combine(availableReleases) { state, releases -> state.copy(availableReleases = releases) }
         .combine(releaseCatalogLoading) { state, loading -> state.copy(releaseCatalogLoading = loading) }
         .combine(downloadingReleaseTag) { state, tag -> state.copy(downloadingReleaseTag = tag) }
+        .combine(downloadedReleaseTags) { state, tags -> state.copy(downloadedReleaseTags = tags) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     fun onCalendarPermissionAvailable() {
@@ -344,6 +347,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             container.updateManager.loadReleaseCatalog()
                 .onSuccess { releases ->
                     availableReleases.value = releases
+                    downloadedReleaseTags.value = container.updateManager.downloadedReleaseTags(releases)
                     if (releases.isEmpty()) message.value = tr("В GitHub Releases пока нет APK")
                 }
                 .onFailure { error ->
@@ -358,11 +362,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             downloadingReleaseTag.value = release.tag
             message.value = when (val result = container.updateManager.downloadRelease(release)) {
-                is UpdateCheckResult.Downloaded -> downloadMessage(result)
+                is UpdateCheckResult.Downloaded -> {
+                    downloadedReleaseTags.value += release.tag
+                    downloadMessage(result)
+                }
                 is UpdateCheckResult.Failed -> tr("Загрузка версии %s: %s", release.version, result.reason)
                 else -> tr("Не удалось загрузить версию %s", release.version)
             }
             downloadingReleaseTag.value = null
+        }
+    }
+
+    fun installRelease(release: AvailableRelease) {
+        viewModelScope.launch {
+            message.value = when (val result = container.updateManager.installRelease(release)) {
+                is UpdateCheckResult.Downloaded -> tr("Версия %s готова к установке", result.version)
+                is UpdateCheckResult.Failed -> {
+                    downloadedReleaseTags.value -= release.tag
+                    tr("Установка версии %s: %s", release.version, result.reason)
+                }
+                else -> tr("Не удалось подготовить установку версии %s", release.version)
+            }
         }
     }
 

@@ -33,8 +33,35 @@ class UpdateManager(
             apkUrl = release.apkUrl,
             requireNewerVersion = false,
             isDowngrade = release.relation == ReleaseRelation.OLDER,
+            notifyWhenReady = false,
         )
     }
+
+    suspend fun installRelease(release: AvailableRelease): UpdateCheckResult {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val apk = releaseFile(release.version)
+                check(apk.isFile && apk.length() > 0L) { "Файл версии не найден — скачайте его снова" }
+                validateDownloadedApk(apk, requireNewerVersion = false)
+                UpdateCheckResult.Downloaded(
+                    version = release.version,
+                    file = apk,
+                    isDowngrade = release.relation == ReleaseRelation.OLDER,
+                )
+            }.getOrElse {
+                UpdateCheckResult.Failed(it.message ?: "Не удалось подготовить установку")
+            }
+        }
+        if (result is UpdateCheckResult.Downloaded) {
+            notificationHelper.openUpdatePrompt(result.version, result.file, result.isDowngrade)
+        }
+        return result
+    }
+
+    fun downloadedReleaseTags(releases: List<AvailableRelease>): Set<String> =
+        releases.asSequence()
+            .filter { release -> releaseFile(release.version).let { it.isFile && it.length() > 0L } }
+            .mapTo(mutableSetOf(), AvailableRelease::tag)
 
     suspend fun checkAndDownloadUpdate(
         force: Boolean = true,
@@ -68,6 +95,7 @@ class UpdateManager(
                 apkUrl = apkUrl,
                 requireNewerVersion = true,
                 isDowngrade = false,
+                notifyWhenReady = true,
             )
         }.getOrElse {
             UpdateCheckResult.Failed(it.message ?: "Ошибка сети")
@@ -87,13 +115,13 @@ class UpdateManager(
         apkUrl: String,
         requireNewerVersion: Boolean,
         isDowngrade: Boolean,
+        notifyWhenReady: Boolean,
     ): UpdateCheckResult {
         var temporary: File? = null
         return runCatching {
-            val directory = context.getExternalFilesDir("updates") ?: context.filesDir.resolve("updates")
+            val directory = updateDirectory()
             directory.mkdirs()
-            val safeVersion = version.replace(Regex("[^A-Za-z0-9._-]"), "-")
-            val apk = directory.resolve("vovremya-$safeVersion.apk")
+            val apk = releaseFile(version)
             val downloadFile = directory.resolve(".${apk.name}.download")
             temporary = downloadFile
             downloadFile.delete()
@@ -101,12 +129,20 @@ class UpdateManager(
             validateDownloadedApk(downloadFile, requireNewerVersion)
             if (apk.exists()) apk.delete()
             check(downloadFile.renameTo(apk)) { "Не удалось сохранить APK" }
-            notificationHelper.showUpdate(version, apk, isDowngrade)
+            if (notifyWhenReady) notificationHelper.showUpdate(version, apk, isDowngrade)
             UpdateCheckResult.Downloaded(version, apk, isDowngrade)
         }.getOrElse {
             temporary?.delete()
             UpdateCheckResult.Failed(it.message ?: "Ошибка загрузки")
         }
+    }
+
+    private fun updateDirectory(): File =
+        context.getExternalFilesDir("updates") ?: context.filesDir.resolve("updates")
+
+    internal fun releaseFile(version: String): File {
+        val safeVersion = version.replace(Regex("[^A-Za-z0-9._-]"), "-")
+        return updateDirectory().resolve("vovremya-$safeVersion.apk")
     }
 
     private fun requestJsonArray(url: String): JSONArray {

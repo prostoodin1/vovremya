@@ -61,4 +61,21 @@ class UpdatePromptTest {
         assertNull(shadowOf(controller.get()).nextStartedActivity)
         controller.pause().stop().destroy()
     }
+
+    @Test
+    fun `manual install opens confirmation without notification permission`() {
+        val application = RuntimeEnvironment.getApplication()
+        shadowOf(application).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val apk = application.getExternalFilesDir("updates")!!.resolve("vovremya-8.8.8.apk")
+        apk.parentFile?.mkdirs()
+        apk.writeBytes(byteArrayOf(1, 2, 3))
+
+        NotificationHelper(application).openUpdatePrompt("8.8.8", apk, isDowngrade = true)
+
+        val intent = shadowOf(application).nextStartedActivity
+        assertNotNull(intent)
+        assertEquals(UpdateInstallerActivity::class.java.name, intent.component?.className)
+        assertEquals("8.8.8", intent.getStringExtra(UpdateInstallerActivity.EXTRA_VERSION))
+        assertEquals(true, intent.getBooleanExtra(UpdateInstallerActivity.EXTRA_IS_DOWNGRADE, false))
+    }
 }

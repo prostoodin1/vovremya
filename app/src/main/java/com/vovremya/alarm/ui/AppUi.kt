@@ -205,6 +205,7 @@ fun MainApp(
     onCheckUpdates: () -> Unit,
     onLoadReleaseCatalog: () -> Unit,
     onDownloadRelease: (AvailableRelease) -> Unit,
+    onInstallRelease: (AvailableRelease) -> Unit,
     onMessageShown: () -> Unit,
 ) {
     var screen by rememberSaveable { mutableStateOf(Screen.Home) }
@@ -293,6 +294,7 @@ fun MainApp(
                     onCheckUpdates = onCheckUpdates,
                     onLoadReleaseCatalog = onLoadReleaseCatalog,
                     onDownloadRelease = onDownloadRelease,
+                    onInstallRelease = onInstallRelease,
                     onSync = onSync,
                     onRequestCalendar = onRequestCalendar,
                     onRequestExactAlarms = onRequestExactAlarms,
@@ -875,6 +877,7 @@ private fun SettingsScreen(
     onCheckUpdates: () -> Unit,
     onLoadReleaseCatalog: () -> Unit,
     onDownloadRelease: (AvailableRelease) -> Unit,
+    onInstallRelease: (AvailableRelease) -> Unit,
     onSync: () -> Unit,
     onRequestCalendar: () -> Unit,
     onRequestExactAlarms: () -> Unit,
@@ -1534,8 +1537,10 @@ private fun SettingsScreen(
                                 ReleaseDownloadRow(
                                     release = release,
                                     downloading = state.downloadingReleaseTag == release.tag,
+                                    downloaded = release.tag in state.downloadedReleaseTags,
                                     downloadEnabled = state.downloadingReleaseTag == null,
                                     onDownload = { onDownloadRelease(release) },
+                                    onInstall = { onInstallRelease(release) },
                                 )
                             }
                         }
@@ -1685,8 +1690,10 @@ private fun MinuteChoiceChips(current: Int, choices: List<Int>, onChange: (Int) 
 private fun ReleaseDownloadRow(
     release: AvailableRelease,
     downloading: Boolean,
+    downloaded: Boolean,
     downloadEnabled: Boolean,
     onDownload: () -> Unit,
+    onInstall: () -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
@@ -1716,11 +1723,14 @@ private fun ReleaseDownloadRow(
                 )
             }
             Spacer(Modifier.width(10.dp))
-            FilledTonalButton(onClick = onDownload, enabled = downloadEnabled) {
+            FilledTonalButton(
+                onClick = if (downloaded) onInstall else onDownload,
+                enabled = downloadEnabled,
+            ) {
                 if (downloading) {
                     CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
                 } else {
-                    Text(tr(if (release.relation == ReleaseRelation.CURRENT) "Скачать снова" else "Скачать"))
+                    Text(tr(if (downloaded) "Установить" else "Скачать"))
                 }
             }
         }

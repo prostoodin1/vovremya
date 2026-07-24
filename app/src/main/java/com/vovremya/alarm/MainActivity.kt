@@ -145,6 +145,7 @@ class MainActivity : ComponentActivity() {
                     onCheckUpdates = viewModel::checkForUpdates,
                     onLoadReleaseCatalog = viewModel::loadReleaseCatalog,
                     onDownloadRelease = viewModel::downloadRelease,
+                    onInstallRelease = viewModel::installRelease,
                     onMessageShown = viewModel::clearMessage,
                 )
             }

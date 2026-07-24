@@ -3,6 +3,7 @@ package com.vovremya.alarm.update
 import com.vovremya.alarm.notifications.NotificationHelper
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -76,4 +77,35 @@ class UpdateManagerTest {
         assertEquals(listOf(true, false), catalog.map { it.prerelease })
         assertEquals(listOf(ReleaseRelation.NEWER, ReleaseRelation.OLDER), catalog.map { it.relation })
     }
+
+    @Test
+    fun `downloaded state is restored for stable and beta releases`() {
+        val stable = release(tag = "v1.4.0", version = "1.4.0", prerelease = false)
+        val beta = release(tag = "v1.5.0-beta.4", version = "1.5.0-beta.4", prerelease = true)
+        manager.releaseFile(stable.version).apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        manager.releaseFile(beta.version).apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(4, 5, 6))
+        }
+
+        val downloaded = manager.downloadedReleaseTags(listOf(stable, beta))
+
+        assertEquals(setOf(stable.tag, beta.tag), downloaded)
+        assertTrue(manager.releaseFile("1.5.0/beta 4").name.endsWith("1.5.0-beta-4.apk"))
+        manager.releaseFile(stable.version).delete()
+        manager.releaseFile(beta.version).delete()
+    }
+
+    private fun release(tag: String, version: String, prerelease: Boolean) = AvailableRelease(
+        tag = tag,
+        version = version,
+        name = tag,
+        prerelease = prerelease,
+        publishedAt = "",
+        apkUrl = "https://example.test/app.apk",
+        relation = ReleaseRelation.OLDER,
+    )
 }

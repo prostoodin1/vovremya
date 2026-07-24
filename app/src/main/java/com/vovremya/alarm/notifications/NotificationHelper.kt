@@ -184,12 +184,7 @@ class NotificationHelper(private val context: Context) {
         val install = PendingIntent.getActivity(
             context,
             UPDATE_NOTIFICATION_ID,
-            Intent(context, UpdateInstallerActivity::class.java).apply {
-                putExtra(UpdateInstallerActivity.EXTRA_APK_PATH, apk.absolutePath)
-                putExtra(UpdateInstallerActivity.EXTRA_VERSION, version)
-                putExtra(UpdateInstallerActivity.EXTRA_IS_DOWNGRADE, isDowngrade)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
+            updatePromptIntent(version, apk, isDowngrade),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val body = tr(
@@ -216,6 +211,18 @@ class NotificationHelper(private val context: Context) {
                 .build(),
         )
     }
+
+    fun openUpdatePrompt(version: String, apk: File, isDowngrade: Boolean = false) {
+        context.startActivity(updatePromptIntent(version, apk, isDowngrade))
+    }
+
+    private fun updatePromptIntent(version: String, apk: File, isDowngrade: Boolean): Intent =
+        Intent(context, UpdateInstallerActivity::class.java).apply {
+            putExtra(UpdateInstallerActivity.EXTRA_APK_PATH, apk.absolutePath)
+            putExtra(UpdateInstallerActivity.EXTRA_VERSION, version)
+            putExtra(UpdateInstallerActivity.EXTRA_IS_DOWNGRADE, isDowngrade)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
 
     fun cancelUpdate() = manager.cancel(UPDATE_NOTIFICATION_ID)
 
