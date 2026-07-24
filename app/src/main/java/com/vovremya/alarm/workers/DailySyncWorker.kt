@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.vovremya.alarm.VovremyaApplication
-import com.vovremya.alarm.data.UpdateChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
@@ -36,7 +35,7 @@ class DailySyncWorker(
             runCatching {
                 container.updateManager.checkAndDownloadUpdate(
                     force = false,
-                    allowPrerelease = settings.updateChannel == UpdateChannel.BETA,
+                    channel = settings.updateChannel,
                 )
             }
         }

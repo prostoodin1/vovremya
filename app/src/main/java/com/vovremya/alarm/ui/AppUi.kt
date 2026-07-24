@@ -1534,13 +1534,18 @@ private fun SettingsScreen(
                         onClick = { onUpdateChannel(UpdateChannel.BETA) },
                         label = { Text(tr("Бета-версии")) },
                     )
+                    FilterChip(
+                        selected = state.settings.updateChannel == UpdateChannel.ALPHA,
+                        onClick = { onUpdateChannel(UpdateChannel.ALPHA) },
+                        label = { Text(tr("Альфа-версии")) },
+                    )
                 }
                 Text(
                     tr(
-                        if (state.settings.updateChannel == UpdateChannel.BETA) {
-                            "Новые функции раньше, но возможны ошибки"
-                        } else {
-                            "Только проверенные полные версии"
+                        when (state.settings.updateChannel) {
+                            UpdateChannel.STABLE -> "Только проверенные полные версии"
+                            UpdateChannel.BETA -> "Новые функции раньше, но возможны ошибки"
+                            UpdateChannel.ALPHA -> "Самые ранние сборки — ошибок может быть больше"
                         },
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -1568,7 +1573,7 @@ private fun SettingsScreen(
                         HorizontalDivider()
                         SettingsActionRow(
                             title = tr("Все версии"),
-                            subtitle = tr("Скачать стабильную или бета-версию из архива"),
+                            subtitle = tr("Скачать стабильную, бета- или альфа-версию из архива"),
                             onClick = {
                                 releasesExpanded = !releasesExpanded
                                 if (releasesExpanded && state.availableReleases.isEmpty()) onLoadReleaseCatalog()
@@ -1582,15 +1587,21 @@ private fun SettingsScreen(
                             ),
                             exit = fadeOut(tween(160)) + shrinkVertically(),
                         ) {
-                            val beta = state.settings.updateChannel == UpdateChannel.BETA
-                            val releases = state.availableReleases.filter { it.prerelease == beta }
+                            val channel = state.settings.updateChannel
+                            val releases = state.availableReleases.filter { it.channel == channel }
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text(
-                                    tr(if (beta) "Архив бета-версий" else "Архив стабильных версий"),
+                                    tr(
+                                        when (channel) {
+                                            UpdateChannel.STABLE -> "Архив стабильных версий"
+                                            UpdateChannel.BETA -> "Архив бета-версий"
+                                            UpdateChannel.ALPHA -> "Архив альфа-версий"
+                                        },
+                                    ),
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
-                                    tr("Старую версию можно скачать, но Android не установит её поверх более новой."),
+                                    tr("Для перехода на старую версию приложение сохранит APK в «Загрузки» и покажет нужные шаги."),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1810,7 +1821,15 @@ private fun ReleaseDownloadRow(
                 if (downloading) {
                     CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
                 } else {
-                    Text(tr(if (downloaded) "Установить" else "Скачать"))
+                    Text(
+                        tr(
+                            when {
+                                !downloaded -> "Скачать"
+                                release.relation == ReleaseRelation.OLDER -> "Перейти"
+                                else -> "Установить"
+                            },
+                        ),
+                    )
                 }
             }
         }

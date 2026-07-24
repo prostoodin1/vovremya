@@ -38,7 +38,7 @@ data class AppSettings(
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-enum class UpdateChannel { STABLE, BETA }
+enum class UpdateChannel { STABLE, BETA, ALPHA }
 
 enum class TorchMode { STEADY, BLINK }
 

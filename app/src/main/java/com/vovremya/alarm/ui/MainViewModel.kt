@@ -331,7 +331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             message.value = when (
                 val result = container.updateManager.checkAndDownloadUpdate(
-                    allowPrerelease = state.value.settings.updateChannel == UpdateChannel.BETA,
+                    channel = state.value.settings.updateChannel,
                 )
             ) {
                 UpdateCheckResult.NotConfigured -> "Сначала укажите GitHub-репозиторий в gradle.properties"

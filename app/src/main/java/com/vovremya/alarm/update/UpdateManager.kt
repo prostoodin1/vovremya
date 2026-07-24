@@ -5,6 +5,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import com.vovremya.alarm.BuildConfig
+import com.vovremya.alarm.data.UpdateChannel
 import com.vovremya.alarm.notifications.NotificationHelper
 import java.io.File
 import java.net.HttpURLConnection
@@ -65,7 +66,7 @@ class UpdateManager(
 
     suspend fun checkAndDownloadUpdate(
         force: Boolean = true,
-        allowPrerelease: Boolean = false,
+        channel: UpdateChannel = UpdateChannel.STABLE,
     ): UpdateCheckResult = withContext(Dispatchers.IO) {
         val preferences = context.getSharedPreferences(UPDATE_PREFERENCES, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
@@ -78,7 +79,7 @@ class UpdateManager(
         }
         runCatching {
             val releases = requestJsonArray("https://api.github.com/repos/$repository/releases?per_page=30")
-            val release = selectRelease(releases, allowPrerelease)
+            val release = selectRelease(releases, channel)
                 ?: return@runCatching UpdateCheckResult.UpToDate
             val version = release.getString("tag_name").removePrefix("v")
             if (compareVersions(version, BuildConfig.VERSION_NAME.removeSuffix("-debug")) <= 0) {
@@ -155,11 +156,11 @@ class UpdateManager(
         }
     }
 
-    internal fun selectRelease(releases: JSONArray, allowPrerelease: Boolean): JSONObject? =
+    internal fun selectRelease(releases: JSONArray, channel: UpdateChannel): JSONObject? =
         (0 until releases.length())
             .map(releases::getJSONObject)
             .filterNot { it.optBoolean("draft", false) }
-            .filter { allowPrerelease || !it.optBoolean("prerelease", false) }
+            .filter { releaseChannel(it) == channel }
             .maxWithOrNull(
                 Comparator { left, right ->
                     compareVersions(
@@ -188,6 +189,7 @@ class UpdateManager(
                     version = version,
                     name = release.optString("name").ifBlank { tag },
                     prerelease = release.optBoolean("prerelease", false),
+                    channel = releaseChannel(release),
                     publishedAt = release.optString("published_at"),
                     apkUrl = apk.optString("browser_download_url"),
                     relation = when {
@@ -198,6 +200,12 @@ class UpdateManager(
                 ).takeIf { it.apkUrl.startsWith("https://") }
             }
             .sortedWith { left, right -> compareVersions(right.version, left.version) }
+
+    internal fun releaseChannel(release: JSONObject): UpdateChannel {
+        if (!release.optBoolean("prerelease", false)) return UpdateChannel.STABLE
+        val identity = "${release.optString("tag_name")} ${release.optString("name")}".lowercase()
+        return if ("alpha" in identity) UpdateChannel.ALPHA else UpdateChannel.BETA
+    }
 
     private fun download(url: String, destination: File) {
         val connection = open(url)
@@ -326,6 +334,7 @@ data class AvailableRelease(
     val version: String,
     val name: String,
     val prerelease: Boolean,
+    val channel: UpdateChannel,
     val publishedAt: String,
     val apkUrl: String,
     val relation: ReleaseRelation,
