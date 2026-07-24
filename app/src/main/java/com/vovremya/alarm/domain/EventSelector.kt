@@ -128,6 +128,8 @@ object EventSelector {
                 } else {
                     settings.reminderVibrationEnabled
                 },
+                effects = if (isAlarm) settings.alarmEffects else settings.reminderEffects,
+                quickDismiss = settings.quickDismiss,
                 soundUri = settings.alarmSoundUri,
                 snoozeMinutes = settings.snoozeMinutes,
                 autoSilenceMinutes = settings.autoSilenceMinutes,

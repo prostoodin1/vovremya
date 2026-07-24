@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val alarmSoundPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != RESULT_OK) return@registerForActivityResult
         @Suppress("DEPRECATION")
@@ -121,6 +122,10 @@ class MainActivity : ComponentActivity() {
                     onAlarmSoundEnabled = viewModel::setAlarmSoundEnabled,
                     onAlarmVibrationEnabled = viewModel::setAlarmVibrationEnabled,
                     onReminderVibrationEnabled = viewModel::setReminderVibrationEnabled,
+                    onAlarmEffects = viewModel::setAlarmEffects,
+                    onReminderEffects = viewModel::setReminderEffects,
+                    onQuickDismiss = viewModel::setQuickDismiss,
+                    onRequestCamera = { cameraPermission.launch(Manifest.permission.CAMERA) },
                     onPickAlarmSound = { openAlarmSoundPicker(state.settings.alarmSoundUri) },
                     onSnoozeMinutes = viewModel::setSnoozeMinutes,
                     onAutoSilenceMinutes = viewModel::setAutoSilenceMinutes,
@@ -183,6 +188,10 @@ class MainActivity : ComponentActivity() {
             getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
         val fullScreen = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
-        return PermissionState(calendar, calendarWrite, notifications, exact, fullScreen)
+        val camera = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        return PermissionState(calendar, calendarWrite, notifications, exact, fullScreen, camera)
     }
 }

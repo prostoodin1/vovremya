@@ -2,6 +2,7 @@ package com.vovremya.alarm.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -33,6 +34,21 @@ class SettingsStore(private val context: Context) {
         val alarmSoundEnabled = booleanPreferencesKey("alarm_sound_enabled")
         val alarmVibrationEnabled = booleanPreferencesKey("alarm_vibration_enabled")
         val reminderVibrationEnabled = booleanPreferencesKey("reminder_vibration_enabled")
+        val alarmHighBrightness = booleanPreferencesKey("alarm_high_brightness")
+        val alarmTorchEnabled = booleanPreferencesKey("alarm_torch_enabled")
+        val alarmTorchMode = stringPreferencesKey("alarm_torch_mode")
+        val alarmTorchBlinkMillis = intPreferencesKey("alarm_torch_blink_millis")
+        val alarmTorchRepeatCount = intPreferencesKey("alarm_torch_repeat_count")
+        val alarmVibrationIntensity = intPreferencesKey("alarm_vibration_intensity")
+        val reminderHighBrightness = booleanPreferencesKey("reminder_high_brightness")
+        val reminderTorchEnabled = booleanPreferencesKey("reminder_torch_enabled")
+        val reminderTorchMode = stringPreferencesKey("reminder_torch_mode")
+        val reminderTorchBlinkMillis = intPreferencesKey("reminder_torch_blink_millis")
+        val reminderTorchRepeatCount = intPreferencesKey("reminder_torch_repeat_count")
+        val reminderVibrationIntensity = intPreferencesKey("reminder_vibration_intensity")
+        val quickDismissEnabled = booleanPreferencesKey("quick_dismiss_enabled")
+        val quickDismissAfterMinutes = intPreferencesKey("quick_dismiss_after_minutes")
+        val quickDismissMode = stringPreferencesKey("quick_dismiss_mode")
         val alarmSoundUri = stringPreferencesKey("alarm_sound_uri")
         val snoozeMinutes = intPreferencesKey("snooze_minutes")
         val autoSilenceMinutes = intPreferencesKey("auto_silence_minutes")
@@ -109,6 +125,20 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setReminderVibrationEnabled(enabled: Boolean) = context.vovremyaDataStore.edit {
         it[Keys.reminderVibrationEnabled] = enabled
+    }
+
+    suspend fun setAlarmEffects(value: SignalEffects) = context.vovremyaDataStore.edit {
+        writeEffects(it, value, alarm = true)
+    }
+
+    suspend fun setReminderEffects(value: SignalEffects) = context.vovremyaDataStore.edit {
+        writeEffects(it, value, alarm = false)
+    }
+
+    suspend fun setQuickDismiss(value: QuickDismissSettings) = context.vovremyaDataStore.edit {
+        it[Keys.quickDismissEnabled] = value.enabled
+        it[Keys.quickDismissAfterMinutes] = value.afterMinutes.coerceIn(0, 23 * 60 + 59)
+        it[Keys.quickDismissMode] = value.mode.name
     }
 
     suspend fun setAlarmSoundUri(uri: String?) = context.vovremyaDataStore.edit {
@@ -213,6 +243,48 @@ class SettingsStore(private val context: Context) {
         it[Keys.lastSyncMillis] = System.currentTimeMillis()
     }
 
+    private fun writeEffects(preferences: MutablePreferences, value: SignalEffects, alarm: Boolean) {
+        val intensity = value.vibrationIntensity.coerceIn(1, 100)
+        val blinkMillis = value.torchBlinkMillis.coerceIn(100, 2_000)
+        val repeatCount = value.torchRepeatCount.coerceIn(1, 100)
+        if (alarm) {
+            preferences[Keys.alarmHighBrightness] = value.highBrightnessEnabled
+            preferences[Keys.alarmTorchEnabled] = value.torchEnabled
+            preferences[Keys.alarmTorchMode] = value.torchMode.name
+            preferences[Keys.alarmTorchBlinkMillis] = blinkMillis
+            preferences[Keys.alarmTorchRepeatCount] = repeatCount
+            preferences[Keys.alarmVibrationIntensity] = intensity
+        } else {
+            preferences[Keys.reminderHighBrightness] = value.highBrightnessEnabled
+            preferences[Keys.reminderTorchEnabled] = value.torchEnabled
+            preferences[Keys.reminderTorchMode] = value.torchMode.name
+            preferences[Keys.reminderTorchBlinkMillis] = blinkMillis
+            preferences[Keys.reminderTorchRepeatCount] = repeatCount
+            preferences[Keys.reminderVibrationIntensity] = intensity
+        }
+    }
+
+    private fun readEffects(preferences: Preferences, alarm: Boolean): SignalEffects = SignalEffects(
+        highBrightnessEnabled = preferences[
+            if (alarm) Keys.alarmHighBrightness else Keys.reminderHighBrightness
+        ] ?: false,
+        torchEnabled = preferences[
+            if (alarm) Keys.alarmTorchEnabled else Keys.reminderTorchEnabled
+        ] ?: false,
+        torchMode = preferences[
+            if (alarm) Keys.alarmTorchMode else Keys.reminderTorchMode
+        ]?.let { stored -> TorchMode.entries.firstOrNull { it.name == stored } } ?: TorchMode.BLINK,
+        torchBlinkMillis = (preferences[
+            if (alarm) Keys.alarmTorchBlinkMillis else Keys.reminderTorchBlinkMillis
+        ] ?: 500).coerceIn(100, 2_000),
+        torchRepeatCount = (preferences[
+            if (alarm) Keys.alarmTorchRepeatCount else Keys.reminderTorchRepeatCount
+        ] ?: 10).coerceIn(1, 100),
+        vibrationIntensity = (preferences[
+            if (alarm) Keys.alarmVibrationIntensity else Keys.reminderVibrationIntensity
+        ] ?: if (alarm) 100 else 60).coerceIn(1, 100),
+    )
+
     private fun settingsFrom(preferences: Preferences): AppSettings {
         val days = preferences[Keys.enabledDays]
             ?.split(',')
@@ -237,6 +309,16 @@ class SettingsStore(private val context: Context) {
             alarmSoundEnabled = preferences[Keys.alarmSoundEnabled] ?: true,
             alarmVibrationEnabled = preferences[Keys.alarmVibrationEnabled] ?: true,
             reminderVibrationEnabled = preferences[Keys.reminderVibrationEnabled] ?: false,
+            alarmEffects = readEffects(preferences, alarm = true),
+            reminderEffects = readEffects(preferences, alarm = false),
+            quickDismiss = QuickDismissSettings(
+                enabled = preferences[Keys.quickDismissEnabled] ?: true,
+                afterMinutes = (preferences[Keys.quickDismissAfterMinutes] ?: 10 * 60)
+                    .coerceIn(0, 23 * 60 + 59),
+                mode = preferences[Keys.quickDismissMode]
+                    ?.let { stored -> QuickDismissMode.entries.firstOrNull { it.name == stored } }
+                    ?: QuickDismissMode.BUTTON,
+            ),
             alarmSoundUri = preferences[Keys.alarmSoundUri].orEmpty(),
             snoozeMinutes = preferences[Keys.snoozeMinutes] ?: 10,
             autoSilenceMinutes = preferences[Keys.autoSilenceMinutes] ?: 10,
@@ -277,6 +359,15 @@ class SettingsStore(private val context: Context) {
                 put("delivery", alarm.delivery.name)
                 put("soundEnabled", alarm.soundEnabled)
                 put("vibrationEnabled", alarm.vibrationEnabled)
+                put("highBrightness", alarm.effects.highBrightnessEnabled)
+                put("torchEnabled", alarm.effects.torchEnabled)
+                put("torchMode", alarm.effects.torchMode.name)
+                put("torchBlinkMillis", alarm.effects.torchBlinkMillis)
+                put("torchRepeatCount", alarm.effects.torchRepeatCount)
+                put("vibrationIntensity", alarm.effects.vibrationIntensity)
+                put("quickDismissEnabled", alarm.quickDismiss.enabled)
+                put("quickDismissAfterMinutes", alarm.quickDismiss.afterMinutes)
+                put("quickDismissMode", alarm.quickDismiss.mode.name)
                 put("soundUri", alarm.soundUri)
                 put("snoozeMinutes", alarm.snoozeMinutes)
                 put("autoSilenceMinutes", alarm.autoSilenceMinutes)
@@ -310,6 +401,24 @@ class SettingsStore(private val context: Context) {
                             ?: AlarmDelivery.ALARM,
                         soundEnabled = item.optBoolean("soundEnabled", true),
                         vibrationEnabled = item.optBoolean("vibrationEnabled", true),
+                        effects = SignalEffects(
+                            highBrightnessEnabled = item.optBoolean("highBrightness", false),
+                            torchEnabled = item.optBoolean("torchEnabled", false),
+                            torchMode = item.optString("torchMode")
+                                .let { stored -> TorchMode.entries.firstOrNull { it.name == stored } }
+                                ?: TorchMode.BLINK,
+                            torchBlinkMillis = item.optInt("torchBlinkMillis", 500).coerceIn(100, 2_000),
+                            torchRepeatCount = item.optInt("torchRepeatCount", 10).coerceIn(1, 100),
+                            vibrationIntensity = item.optInt("vibrationIntensity", 100).coerceIn(1, 100),
+                        ),
+                        quickDismiss = QuickDismissSettings(
+                            enabled = item.optBoolean("quickDismissEnabled", true),
+                            afterMinutes = item.optInt("quickDismissAfterMinutes", 10 * 60)
+                                .coerceIn(0, 23 * 60 + 59),
+                            mode = item.optString("quickDismissMode")
+                                .let { stored -> QuickDismissMode.entries.firstOrNull { it.name == stored } }
+                                ?: QuickDismissMode.BUTTON,
+                        ),
                         soundUri = item.optString("soundUri"),
                         snoozeMinutes = item.optInt("snoozeMinutes", 10).coerceIn(1, 120),
                         autoSilenceMinutes = item.optInt("autoSilenceMinutes", 10).coerceIn(1, 60),

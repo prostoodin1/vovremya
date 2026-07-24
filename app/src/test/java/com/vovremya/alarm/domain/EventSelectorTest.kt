@@ -4,6 +4,10 @@ import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.EventDecision
+import com.vovremya.alarm.data.QuickDismissMode
+import com.vovremya.alarm.data.QuickDismissSettings
+import com.vovremya.alarm.data.SignalEffects
+import com.vovremya.alarm.data.TorchMode
 import java.time.DayOfWeek
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -147,6 +151,49 @@ class EventSelectorTest {
         assertEquals(2, result.alarms.count { it.delivery == AlarmDelivery.SILENT_REMINDER })
         assertEquals(listOf(true, true, true), result.alarms.map { it.vibrationEnabled })
         assertEquals(listOf(true, false, false), result.alarms.map { it.soundEnabled })
+    }
+
+    @Test
+    fun `first and later events receive their own signal profiles`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val alarmEffects = SignalEffects(
+            highBrightnessEnabled = true,
+            torchEnabled = true,
+            torchMode = TorchMode.STEADY,
+            vibrationIntensity = 90,
+        )
+        val reminderEffects = SignalEffects(
+            torchEnabled = true,
+            torchMode = TorchMode.BLINK,
+            torchBlinkMillis = 200,
+            torchRepeatCount = 20,
+            vibrationIntensity = 35,
+        )
+        val quickDismiss = QuickDismissSettings(
+            enabled = true,
+            afterMinutes = 11 * 60,
+            mode = QuickDismissMode.TAP_ANYWHERE,
+        )
+
+        val result = EventSelector.select(
+            listOf(
+                event(1, time(2026, 7, 15, 9, 0)),
+                event(2, time(2026, 7, 15, 11, 0)),
+            ),
+            AppSettings(
+                leadMinutes = 30,
+                allEventsPerDay = true,
+                alarmEffects = alarmEffects,
+                reminderEffects = reminderEffects,
+                quickDismiss = quickDismiss,
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(alarmEffects, result.alarms[0].effects)
+        assertEquals(reminderEffects, result.alarms[1].effects)
+        assertEquals(listOf(quickDismiss, quickDismiss), result.alarms.map { it.quickDismiss })
     }
 
     @Test

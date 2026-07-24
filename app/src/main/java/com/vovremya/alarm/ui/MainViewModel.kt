@@ -11,10 +11,12 @@ import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.CalendarSyncRepairResult
 import com.vovremya.alarm.data.ScheduledAlarm
+import com.vovremya.alarm.data.SignalEffects
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.SyncResult
 import com.vovremya.alarm.data.ThemeMode
 import com.vovremya.alarm.data.UpdateChannel
+import com.vovremya.alarm.data.QuickDismissSettings
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.update.AvailableRelease
 import com.vovremya.alarm.update.UpdateCheckResult
@@ -214,6 +216,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setReminderVibrationEnabled(enabled: Boolean) = updateAndSync {
         container.settingsStore.setReminderVibrationEnabled(enabled)
+    }
+
+    fun setAlarmEffects(value: SignalEffects) = updateAndSync {
+        container.settingsStore.setAlarmEffects(value)
+    }
+
+    fun setReminderEffects(value: SignalEffects) = updateAndSync {
+        container.settingsStore.setReminderEffects(value)
+    }
+
+    fun setQuickDismiss(value: QuickDismissSettings) = updateAndSync {
+        container.settingsStore.setQuickDismiss(value)
     }
 
     fun setAlarmSoundUri(uri: String?) = updateAndSync {

@@ -16,6 +16,9 @@ data class AppSettings(
     val alarmSoundEnabled: Boolean = true,
     val alarmVibrationEnabled: Boolean = true,
     val reminderVibrationEnabled: Boolean = false,
+    val alarmEffects: SignalEffects = SignalEffects(),
+    val reminderEffects: SignalEffects = SignalEffects(vibrationIntensity = 60),
+    val quickDismiss: QuickDismissSettings = QuickDismissSettings(),
     val alarmSoundUri: String = "",
     val snoozeMinutes: Int = 10,
     val autoSilenceMinutes: Int = 10,
@@ -35,6 +38,25 @@ data class AppSettings(
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 enum class UpdateChannel { STABLE, BETA }
+
+enum class TorchMode { STEADY, BLINK }
+
+enum class QuickDismissMode { BUTTON, TAP_ANYWHERE }
+
+data class SignalEffects(
+    val highBrightnessEnabled: Boolean = false,
+    val torchEnabled: Boolean = false,
+    val torchMode: TorchMode = TorchMode.BLINK,
+    val torchBlinkMillis: Int = 500,
+    val torchRepeatCount: Int = 10,
+    val vibrationIntensity: Int = 100,
+)
+
+data class QuickDismissSettings(
+    val enabled: Boolean = true,
+    val afterMinutes: Int = 10 * 60,
+    val mode: QuickDismissMode = QuickDismissMode.BUTTON,
+)
 
 enum class AccentTheme {
     VIOLET,
@@ -126,6 +148,8 @@ data class ScheduledAlarm(
     val delivery: AlarmDelivery = AlarmDelivery.ALARM,
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
+    val effects: SignalEffects = SignalEffects(),
+    val quickDismiss: QuickDismissSettings = QuickDismissSettings(),
     val soundUri: String = "",
     val snoozeMinutes: Int = 10,
     val autoSilenceMinutes: Int = 10,

@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.EventAvailable
+import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
@@ -125,9 +126,13 @@ import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
 import com.vovremya.alarm.data.EventSource
 import com.vovremya.alarm.data.ScheduledAlarm
+import com.vovremya.alarm.data.SignalEffects
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.ThemeMode
+import com.vovremya.alarm.data.TorchMode
 import com.vovremya.alarm.data.UpdateChannel
+import com.vovremya.alarm.data.QuickDismissMode
+import com.vovremya.alarm.data.QuickDismissSettings
 import com.vovremya.alarm.localization.appLocale
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.Mint
@@ -150,6 +155,7 @@ data class PermissionState(
     val notifications: Boolean,
     val exactAlarms: Boolean,
     val fullScreen: Boolean,
+    val camera: Boolean,
 ) {
     val allGranted: Boolean get() = calendar && calendarWrite && notifications && exactAlarms && fullScreen
 }
@@ -176,6 +182,10 @@ fun MainApp(
     onAlarmSoundEnabled: (Boolean) -> Unit,
     onAlarmVibrationEnabled: (Boolean) -> Unit,
     onReminderVibrationEnabled: (Boolean) -> Unit,
+    onAlarmEffects: (SignalEffects) -> Unit,
+    onReminderEffects: (SignalEffects) -> Unit,
+    onQuickDismiss: (QuickDismissSettings) -> Unit,
+    onRequestCamera: () -> Unit,
     onPickAlarmSound: () -> Unit,
     onSnoozeMinutes: (Int) -> Unit,
     onAutoSilenceMinutes: (Int) -> Unit,
@@ -264,6 +274,10 @@ fun MainApp(
                     onAlarmSoundEnabled = onAlarmSoundEnabled,
                     onAlarmVibrationEnabled = onAlarmVibrationEnabled,
                     onReminderVibrationEnabled = onReminderVibrationEnabled,
+                    onAlarmEffects = onAlarmEffects,
+                    onReminderEffects = onReminderEffects,
+                    onQuickDismiss = onQuickDismiss,
+                    onRequestCamera = onRequestCamera,
                     onPickAlarmSound = onPickAlarmSound,
                     onSnoozeMinutes = onSnoozeMinutes,
                     onAutoSilenceMinutes = onAutoSilenceMinutes,
@@ -842,6 +856,10 @@ private fun SettingsScreen(
     onAlarmSoundEnabled: (Boolean) -> Unit,
     onAlarmVibrationEnabled: (Boolean) -> Unit,
     onReminderVibrationEnabled: (Boolean) -> Unit,
+    onAlarmEffects: (SignalEffects) -> Unit,
+    onReminderEffects: (SignalEffects) -> Unit,
+    onQuickDismiss: (QuickDismissSettings) -> Unit,
+    onRequestCamera: () -> Unit,
     onPickAlarmSound: () -> Unit,
     onSnoozeMinutes: (Int) -> Unit,
     onAutoSilenceMinutes: (Int) -> Unit,
@@ -865,6 +883,8 @@ private fun SettingsScreen(
     var showColorDialog by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     var releasesExpanded by rememberSaveable { mutableStateOf(false) }
+    var alarmEffectsExpanded by rememberSaveable { mutableStateOf(false) }
+    var reminderEffectsExpanded by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val selectedCalendars = state.calendars.filter { calendar ->
         state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds
@@ -1101,10 +1121,128 @@ private fun SettingsScreen(
                     onChecked = onAlarmVibrationEnabled,
                 )
                 HorizontalDivider()
+                ToggleRow(
+                    title = tr("Упрощённое отключение после времени"),
+                    subtitle = if (state.settings.quickDismiss.enabled) {
+                        tr("После %s без кнопки «Позже»", formatClockMinutes(state.settings.quickDismiss.afterMinutes))
+                    } else {
+                        tr("Всегда показывать «Я встал» и «Позже»")
+                    },
+                    checked = state.settings.quickDismiss.enabled,
+                    onChecked = { enabled ->
+                        onQuickDismiss(state.settings.quickDismiss.copy(enabled = enabled))
+                    },
+                )
+                AnimatedVisibility(
+                    visible = state.settings.quickDismiss.enabled,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
+                    ),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingsActionRow(
+                            title = tr("Включать упрощённый экран после"),
+                            subtitle = formatClockMinutes(state.settings.quickDismiss.afterMinutes),
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, h, m ->
+                                        onQuickDismiss(state.settings.quickDismiss.copy(afterMinutes = h * 60 + m))
+                                    },
+                                    state.settings.quickDismiss.afterMinutes / 60,
+                                    state.settings.quickDismiss.afterMinutes % 60,
+                                    true,
+                                ).show()
+                            },
+                        )
+                        Text(tr("Как выключать"), fontWeight = FontWeight.Medium)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            QuickDismissMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = state.settings.quickDismiss.mode == mode,
+                                    onClick = { onQuickDismiss(state.settings.quickDismiss.copy(mode = mode)) },
+                                    label = {
+                                        Text(
+                                            tr(
+                                                if (mode == QuickDismissMode.BUTTON) {
+                                                    "Кнопка «Готово»"
+                                                } else {
+                                                    "Касание экрана"
+                                                },
+                                            ),
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider()
                 Text(tr("Отложить сигнал"), fontWeight = FontWeight.Medium)
                 MinuteChoiceChips(state.settings.snoozeMinutes, listOf(5, 10, 15, 30, 60), onSnoozeMinutes)
                 Text(tr("Автоматически выключить звук"), fontWeight = FontWeight.Medium)
                 MinuteChoiceChips(state.settings.autoSilenceMinutes, listOf(1, 5, 10, 15, 30), onAutoSilenceMinutes)
+            }
+        }
+        item {
+            SettingsCard(Icons.Rounded.FlashOn, tr("Сигналы"), tr("Яркость, фонарик и сила вибрации")) {
+                SettingsActionRow(
+                    title = tr("Первое событие дня"),
+                    subtitle = signalEffectsSummary(
+                        state.settings.alarmEffects,
+                        state.settings.alarmVibrationEnabled,
+                    ),
+                    onClick = { alarmEffectsExpanded = !alarmEffectsExpanded },
+                    expanded = alarmEffectsExpanded,
+                )
+                AnimatedVisibility(
+                    visible = alarmEffectsExpanded,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(),
+                ) {
+                    SignalEffectsEditor(
+                        effects = state.settings.alarmEffects,
+                        vibrationEnabled = state.settings.alarmVibrationEnabled,
+                        cameraGranted = permissions.camera,
+                        onEffectsChange = onAlarmEffects,
+                        onVibrationEnabled = onAlarmVibrationEnabled,
+                        onRequestCamera = onRequestCamera,
+                    )
+                }
+                HorizontalDivider()
+                SettingsActionRow(
+                    title = tr("Остальные события"),
+                    subtitle = signalEffectsSummary(
+                        state.settings.reminderEffects,
+                        state.settings.reminderVibrationEnabled,
+                    ),
+                    onClick = { reminderEffectsExpanded = !reminderEffectsExpanded },
+                    expanded = reminderEffectsExpanded,
+                )
+                AnimatedVisibility(
+                    visible = reminderEffectsExpanded,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                    ),
+                    exit = fadeOut(tween(180)) + shrinkVertically(),
+                ) {
+                    SignalEffectsEditor(
+                        effects = state.settings.reminderEffects,
+                        vibrationEnabled = state.settings.reminderVibrationEnabled,
+                        cameraGranted = permissions.camera,
+                        onEffectsChange = onReminderEffects,
+                        onVibrationEnabled = onReminderVibrationEnabled,
+                        onRequestCamera = onRequestCamera,
+                    )
+                }
             }
         }
         item {
@@ -1587,6 +1725,127 @@ private fun ReleaseDownloadRow(
             }
         }
     }
+}
+
+@Composable
+private fun SignalEffectsEditor(
+    effects: SignalEffects,
+    vibrationEnabled: Boolean,
+    cameraGranted: Boolean,
+    onEffectsChange: (SignalEffects) -> Unit,
+    onVibrationEnabled: (Boolean) -> Unit,
+    onRequestCamera: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ToggleRow(
+            title = tr("Высокая яркость экрана"),
+            subtitle = tr("На время сигнала экран будет максимально ярким"),
+            checked = effects.highBrightnessEnabled,
+            onChecked = { onEffectsChange(effects.copy(highBrightnessEnabled = it)) },
+        )
+        ToggleRow(
+            title = tr("Фонарик"),
+            subtitle = tr("Использовать заднюю вспышку телефона"),
+            checked = effects.torchEnabled,
+            onChecked = { enabled ->
+                onEffectsChange(effects.copy(torchEnabled = enabled))
+                if (enabled && !cameraGranted) onRequestCamera()
+            },
+        )
+        AnimatedVisibility(
+            visible = effects.torchEnabled,
+            enter = fadeIn(tween(240)) + expandVertically(),
+            exit = fadeOut(tween(160)) + shrinkVertically(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!cameraGranted) {
+                    FilledTonalButton(onClick = onRequestCamera, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Разрешить доступ к фонарику"))
+                    }
+                }
+                Text(tr("Режим фонарика"), fontWeight = FontWeight.Medium)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TorchMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = effects.torchMode == mode,
+                            onClick = { onEffectsChange(effects.copy(torchMode = mode)) },
+                            label = { Text(tr(if (mode == TorchMode.STEADY) "Светить постоянно" else "Моргать")) },
+                        )
+                    }
+                }
+                if (effects.torchMode == TorchMode.BLINK) {
+                    Text(tr("Скорость мигания"), fontWeight = FontWeight.Medium)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(200, 350, 500, 1_000).forEach { millis ->
+                            FilterChip(
+                                selected = effects.torchBlinkMillis == millis,
+                                onClick = { onEffectsChange(effects.copy(torchBlinkMillis = millis)) },
+                                label = { Text(tr("%d мс", millis)) },
+                            )
+                        }
+                    }
+                    Text(tr("Количество миганий"), fontWeight = FontWeight.Medium)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(5, 10, 20, 50).forEach { count ->
+                            FilterChip(
+                                selected = effects.torchRepeatCount == count,
+                                onClick = { onEffectsChange(effects.copy(torchRepeatCount = count)) },
+                                label = { Text(count.toString()) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        ToggleRow(
+            title = tr("Вибрация"),
+            subtitle = tr("Настраиваемая сила вибросигнала"),
+            checked = vibrationEnabled,
+            onChecked = onVibrationEnabled,
+        )
+        AnimatedVisibility(
+            visible = vibrationEnabled,
+            enter = fadeIn(tween(240)) + expandVertically(),
+            exit = fadeOut(tween(160)) + shrinkVertically(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("Сила вибрации"), fontWeight = FontWeight.Medium)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(25, 50, 75, 100).forEach { intensity ->
+                        FilterChip(
+                            selected = effects.vibrationIntensity == intensity,
+                            onClick = { onEffectsChange(effects.copy(vibrationIntensity = intensity)) },
+                            label = { Text("$intensity%") },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun signalEffectsSummary(effects: SignalEffects, vibrationEnabled: Boolean): String {
+    val enabled = buildList {
+        if (effects.highBrightnessEnabled) add(tr("яркий экран"))
+        if (effects.torchEnabled) add(tr(if (effects.torchMode == TorchMode.BLINK) "мигающий фонарик" else "фонарик"))
+        if (vibrationEnabled) add(tr("вибрация %d%%", effects.vibrationIntensity))
+    }
+    return enabled.joinToString(" · ").ifBlank { tr("Без дополнительных эффектов") }
 }
 
 @Composable

@@ -29,8 +29,8 @@ android {
         applicationId = "com.vovremya.alarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.5.0-beta.3"
+        versionCode = 17
+        versionName = "1.5.0-beta.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

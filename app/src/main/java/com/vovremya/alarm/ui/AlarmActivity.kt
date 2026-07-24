@@ -1,5 +1,9 @@
 package com.vovremya.alarm.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -19,6 +23,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,10 +57,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.ContextCompat
 import com.vovremya.alarm.VovremyaApplication
 import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.AppSettings
+import com.vovremya.alarm.data.QuickDismissMode
+import com.vovremya.alarm.data.QuickDismissSettings
 import com.vovremya.alarm.data.ScheduledAlarm
+import com.vovremya.alarm.data.SignalEffects
+import com.vovremya.alarm.data.TorchMode
+import com.vovremya.alarm.domain.AlarmBehavior
 import com.vovremya.alarm.domain.AlarmPayload
 import com.vovremya.alarm.localization.appLocale
 import com.vovremya.alarm.localization.tr
@@ -67,8 +78,25 @@ import java.time.format.DateTimeFormatter
 class AlarmActivity : ComponentActivity() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
+    private var originalBrightness: Float? = null
+    private var cameraManager: CameraManager? = null
+    private var torchCameraId: String? = null
+    private var torchEnabled = false
+    private var torchTogglesRemaining = 0
+    private var torchBlinkMillis = 500L
     private val signalHandler = Handler(Looper.getMainLooper())
     private val autoSilence = Runnable { stopSignal() }
+    private val torchPulse = object : Runnable {
+        override fun run() {
+            if (torchTogglesRemaining <= 0) {
+                setTorch(false)
+                return
+            }
+            setTorch(!torchEnabled)
+            torchTogglesRemaining--
+            signalHandler.postDelayed(this, torchBlinkMillis)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,12 +124,32 @@ class AlarmActivity : ComponentActivity() {
         }
         val soundEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
         val vibrationEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        val effects = SignalEffects(
+            highBrightnessEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_HIGH_BRIGHTNESS, false),
+            torchEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_TORCH_ENABLED, false),
+            torchMode = intent.getStringExtra(AlarmPayload.EXTRA_TORCH_MODE)
+                ?.let { stored -> TorchMode.entries.firstOrNull { it.name == stored } }
+                ?: TorchMode.BLINK,
+            torchBlinkMillis = intent.getIntExtra(AlarmPayload.EXTRA_TORCH_BLINK_MILLIS, 500)
+                .coerceIn(100, 2_000),
+            torchRepeatCount = intent.getIntExtra(AlarmPayload.EXTRA_TORCH_REPEAT_COUNT, 10)
+                .coerceIn(1, 100),
+            vibrationIntensity = intent.getIntExtra(AlarmPayload.EXTRA_VIBRATION_INTENSITY, 100)
+                .coerceIn(1, 100),
+        )
+        val quickDismissSettings = QuickDismissSettings(
+            enabled = intent.getBooleanExtra(AlarmPayload.EXTRA_QUICK_DISMISS_ENABLED, true),
+            afterMinutes = intent.getIntExtra(AlarmPayload.EXTRA_QUICK_DISMISS_AFTER_MINUTES, 10 * 60)
+                .coerceIn(0, 23 * 60 + 59),
+            mode = intent.getStringExtra(AlarmPayload.EXTRA_QUICK_DISMISS_MODE)
+                ?.let { stored -> QuickDismissMode.entries.firstOrNull { it.name == stored } }
+                ?: QuickDismissMode.BUTTON,
+        )
+        val quickDismiss = !isReminder && AlarmBehavior.usesQuickDismiss(quickDismissSettings)
         val soundUri = intent.getStringExtra(AlarmPayload.EXTRA_SOUND_URI).orEmpty()
         val snoozeMinutes = intent.getIntExtra(AlarmPayload.EXTRA_SNOOZE_MINUTES, 10).coerceIn(1, 120)
         val autoSilenceMinutes = intent.getIntExtra(AlarmPayload.EXTRA_AUTO_SILENCE_MINUTES, 10).coerceIn(1, 60)
-        if (!isReminder || vibrationEnabled) {
-            startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes)
-        }
+        startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes, effects)
         setContent {
             val settings by (application as VovremyaApplication).container.settingsStore.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
@@ -119,6 +167,8 @@ class AlarmActivity : ComponentActivity() {
                     snoozeMinutes = snoozeMinutes,
                     isReminder = isReminder,
                     vibrationEnabled = vibrationEnabled,
+                    quickDismiss = quickDismiss,
+                    quickDismissMode = quickDismissSettings.mode,
                     onDismiss = { stopAndClose(key) },
                     onSnooze = {
                         snooze(
@@ -129,6 +179,8 @@ class AlarmActivity : ComponentActivity() {
                             allDay = allDay,
                             soundEnabled = soundEnabled,
                             vibrationEnabled = vibrationEnabled,
+                            effects = effects,
+                            quickDismiss = quickDismissSettings,
                             soundUri = soundUri,
                             snoozeMinutes = snoozeMinutes,
                             autoSilenceMinutes = autoSilenceMinutes,
@@ -150,7 +202,10 @@ class AlarmActivity : ComponentActivity() {
         vibrationEnabled: Boolean,
         soundUri: String,
         autoSilenceMinutes: Int,
+        effects: SignalEffects,
     ) {
+        applyHighBrightness(effects.highBrightnessEnabled)
+        startTorch(effects)
         if (soundEnabled) {
             val configuredUri = soundUri.takeIf(String::isNotBlank)?.let(Uri::parse)
             val alarmUri = configuredUri
@@ -163,17 +218,73 @@ class AlarmActivity : ComponentActivity() {
             }
         }
         if (vibrationEnabled) {
+            val amplitude = AlarmBehavior.vibrationAmplitude(effects.vibrationIntensity)
             vibrator = getSystemService(Vibrator::class.java)?.apply {
-                vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 350, 700), 0))
+                vibrate(
+                    VibrationEffect.createWaveform(
+                        longArrayOf(0, 700, 350, 700),
+                        intArrayOf(0, amplitude, 0, amplitude),
+                        0,
+                    ),
+                )
             }
         }
         signalHandler.postDelayed(autoSilence, autoSilenceMinutes * 60_000L)
+    }
+
+    private fun applyHighBrightness(enabled: Boolean) {
+        if (!enabled || originalBrightness != null) return
+        originalBrightness = window.attributes.screenBrightness
+        window.attributes = window.attributes.apply { screenBrightness = 1f }
+    }
+
+    private fun restoreBrightness() {
+        val brightness = originalBrightness ?: return
+        window.attributes = window.attributes.apply { screenBrightness = brightness }
+        originalBrightness = null
+    }
+
+    private fun startTorch(effects: SignalEffects) {
+        if (!effects.torchEnabled || ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val manager = getSystemService(CameraManager::class.java) ?: return
+        val cameraId = runCatching {
+            manager.cameraIdList.firstOrNull { id ->
+                val characteristics = manager.getCameraCharacteristics(id)
+                characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true &&
+                    characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            }
+        }.getOrNull() ?: return
+        cameraManager = manager
+        torchCameraId = cameraId
+        if (effects.torchMode == TorchMode.STEADY) {
+            setTorch(true)
+        } else {
+            torchBlinkMillis = effects.torchBlinkMillis.coerceIn(100, 2_000).toLong()
+            torchTogglesRemaining = (effects.torchRepeatCount.coerceIn(1, 100) * 2) - 1
+            setTorch(true)
+            signalHandler.postDelayed(torchPulse, torchBlinkMillis)
+        }
+    }
+
+    private fun setTorch(enabled: Boolean) {
+        val manager = cameraManager ?: return
+        val cameraId = torchCameraId ?: return
+        runCatching { manager.setTorchMode(cameraId, enabled) }
+            .onSuccess { torchEnabled = enabled }
+        if (!enabled) torchEnabled = false
     }
 
     private fun stopSignal() {
         signalHandler.removeCallbacks(autoSilence)
         ringtone?.stop()
         vibrator?.cancel()
+        signalHandler.removeCallbacks(torchPulse)
+        setTorch(false)
+        restoreBrightness()
         ringtone = null
     }
 
@@ -191,6 +302,8 @@ class AlarmActivity : ComponentActivity() {
         allDay: Boolean,
         soundEnabled: Boolean,
         vibrationEnabled: Boolean,
+        effects: SignalEffects,
+        quickDismiss: QuickDismissSettings,
         soundUri: String,
         snoozeMinutes: Int,
         autoSilenceMinutes: Int,
@@ -210,6 +323,8 @@ class AlarmActivity : ComponentActivity() {
                 allDay = allDay,
                 soundEnabled = soundEnabled,
                 vibrationEnabled = vibrationEnabled,
+                effects = effects,
+                quickDismiss = quickDismiss,
                 soundUri = soundUri,
                 snoozeMinutes = snoozeMinutes,
                 autoSilenceMinutes = autoSilenceMinutes,
@@ -227,6 +342,8 @@ private fun AlarmScreen(
     snoozeMinutes: Int,
     isReminder: Boolean,
     vibrationEnabled: Boolean,
+    quickDismiss: Boolean,
+    quickDismissMode: QuickDismissMode,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
@@ -241,6 +358,13 @@ private fun AlarmScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .then(
+                if (quickDismiss && quickDismissMode == QuickDismissMode.TAP_ANYWHERE) {
+                    Modifier.clickable(onClick = onDismiss)
+                } else {
+                    Modifier
+                },
+            )
             .background(
                 Brush.verticalGradient(
                     listOf(lerp(primary, Color.Black, .62f), Color(0xFF151322), Color(0xFF101018)),
@@ -305,13 +429,33 @@ private fun AlarmScreen(
                 Text(location, color = Color(0xFFBDB7CC), textAlign = TextAlign.Center)
             }
             Spacer(Modifier.height(56.dp))
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(58.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF241C52)),
-            ) { Text(tr(if (isReminder) "Закрыть" else "Я встал"), fontWeight = FontWeight.Bold) }
-            if (!isReminder) {
+            if (quickDismiss && quickDismissMode == QuickDismissMode.TAP_ANYWHERE) {
+                Text(
+                    tr("Коснитесь экрана, чтобы выключить"),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF241C52)),
+                ) {
+                    Text(
+                        tr(
+                            when {
+                                isReminder -> "Закрыть"
+                                quickDismiss -> "Готово"
+                                else -> "Я встал"
+                            },
+                        ),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            if (!isReminder && !quickDismiss) {
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = onSnooze,
