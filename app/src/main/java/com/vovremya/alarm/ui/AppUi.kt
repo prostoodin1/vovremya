@@ -929,12 +929,6 @@ private fun SettingsScreen(
             }
         }
         item {
-            AdvancedModeToggle(
-                enabled = state.settings.advancedMode,
-                onEnabledChange = onAdvancedMode,
-            )
-        }
-        item {
             SettingsCard(
                 Icons.Rounded.Palette,
                 tr("Оформление"),
@@ -1512,6 +1506,19 @@ private fun SettingsScreen(
         }
         item {
             SettingsCard(Icons.Rounded.SystemUpdate, tr("Обновления"), tr("Через GitHub Releases")) {
+                ToggleRow(
+                    title = tr("Расширенный режим"),
+                    subtitle = tr(
+                        if (state.settings.advancedMode) {
+                            "Показаны все тонкие настройки"
+                        } else {
+                            "Скрывает сложные настройки и оставляет основные"
+                        },
+                    ),
+                    checked = state.settings.advancedMode,
+                    onChecked = onAdvancedMode,
+                )
+                HorizontalDivider()
                 Text(tr("Канал обновлений"), fontWeight = FontWeight.SemiBold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1929,66 +1936,6 @@ private fun signalEffectsSummary(effects: SignalEffects, vibrationEnabled: Boole
         if (vibrationEnabled) add(tr("вибрация %d%%", effects.vibrationIntensity))
     }
     return enabled.joinToString(" · ").ifBlank { tr("Без дополнительных эффектов") }
-}
-
-@Composable
-private fun AdvancedModeToggle(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
-    Surface(
-        color = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.animateContentSize(
-            animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .clickable { onEnabledChange(!enabled) }
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(15.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Settings,
-                    contentDescription = null,
-                    tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(tr("Расширенный режим"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    tr(
-                        if (enabled) {
-                            "Показаны все тонкие настройки"
-                        } else {
-                            "Скрывает сложные настройки и оставляет основные"
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (enabled) {
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-            )
-        }
-    }
 }
 
 @Composable
