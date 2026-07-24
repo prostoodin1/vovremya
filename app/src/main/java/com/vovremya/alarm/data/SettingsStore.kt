@@ -23,6 +23,7 @@ private val Context.vovremyaDataStore by preferencesDataStore(name = "vovremya_s
 
 class SettingsStore(private val context: Context) {
     private object Keys {
+        val advancedMode = booleanPreferencesKey("advanced_mode")
         val leadMinutes = intPreferencesKey("lead_minutes")
         val latestEventMinutes = intPreferencesKey("latest_event_minutes")
         val latestEventEnabled = booleanPreferencesKey("latest_event_enabled")
@@ -82,6 +83,10 @@ class SettingsStore(private val context: Context) {
     val lastSyncMillis: Flow<Long?> = context.vovremyaDataStore.data
         .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
         .map { it[Keys.lastSyncMillis] }
+
+    suspend fun setAdvancedMode(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.advancedMode] = enabled
+    }
 
     suspend fun setLeadMinutes(value: Int) = context.vovremyaDataStore.edit {
         it[Keys.leadMinutes] = value.coerceIn(0, 14 * 24 * 60)
@@ -297,6 +302,7 @@ class SettingsStore(private val context: Context) {
             ?.toSet()
             ?: emptySet()
         return AppSettings(
+            advancedMode = preferences[Keys.advancedMode] ?: false,
             leadMinutes = preferences[Keys.leadMinutes] ?: 90,
             latestEventMinutes = preferences[Keys.latestEventMinutes] ?: (23 * 60 + 59),
             latestEventEnabled = preferences[Keys.latestEventEnabled]

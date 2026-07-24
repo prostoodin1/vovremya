@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
                     onSelectAllCalendars = viewModel::selectAllCalendars,
                     onAutomaticUpdates = viewModel::setAutomaticUpdates,
                     onUpdateChannel = viewModel::setUpdateChannel,
+                    onAdvancedMode = viewModel::setAdvancedMode,
                     onSkipAlarm = viewModel::skipAlarm,
                     onRestoreAlarm = viewModel::restoreAlarm,
                     onSkipAllToday = viewModel::skipAllToday,

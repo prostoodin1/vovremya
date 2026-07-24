@@ -278,6 +278,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { container.settingsStore.setUpdateChannel(channel) }
     }
 
+    fun setAdvancedMode(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setAdvancedMode(enabled) }
+    }
+
     fun skipAlarm(alarm: ScheduledAlarm) {
         container.alarmScheduler.cancel(alarm)
         updateAndSync {

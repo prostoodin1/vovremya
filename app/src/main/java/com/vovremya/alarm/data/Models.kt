@@ -5,6 +5,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 
 data class AppSettings(
+    val advancedMode: Boolean = false,
     val leadMinutes: Int = 90,
     val latestEventMinutes: Int = 23 * 60 + 59,
     val latestEventEnabled: Boolean = false,

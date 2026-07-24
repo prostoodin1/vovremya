@@ -194,6 +194,7 @@ fun MainApp(
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
     onUpdateChannel: (UpdateChannel) -> Unit,
+    onAdvancedMode: (Boolean) -> Unit,
     onSkipAlarm: (ScheduledAlarm) -> Unit,
     onRestoreAlarm: (ScheduledAlarm) -> Unit,
     onSkipAllToday: () -> Unit,
@@ -287,6 +288,7 @@ fun MainApp(
                     onSelectAllCalendars = onSelectAllCalendars,
                     onAutomaticUpdates = onAutomaticUpdates,
                     onUpdateChannel = onUpdateChannel,
+                    onAdvancedMode = onAdvancedMode,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
                     onCustomAccentColor = onCustomAccentColor,
@@ -870,6 +872,7 @@ private fun SettingsScreen(
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
     onUpdateChannel: (UpdateChannel) -> Unit,
+    onAdvancedMode: (Boolean) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
     onCustomAccentColor: (Int) -> Unit,
@@ -926,7 +929,17 @@ private fun SettingsScreen(
             }
         }
         item {
-            SettingsCard(Icons.Rounded.Palette, tr("Оформление"), tr("Цвет и режим интерфейса")) {
+            AdvancedModeToggle(
+                enabled = state.settings.advancedMode,
+                onEnabledChange = onAdvancedMode,
+            )
+        }
+        item {
+            SettingsCard(
+                Icons.Rounded.Palette,
+                tr("Оформление"),
+                tr(if (state.settings.advancedMode) "Цвет и режим интерфейса" else "Тема приложения"),
+            ) {
                 Text(tr("Режим"), fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ThemeMode.entries.forEach { mode ->
@@ -945,47 +958,61 @@ private fun SettingsScreen(
                         )
                     }
                 }
-                Text(tr("Фон"), fontWeight = FontWeight.Medium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BackgroundStyle.entries.forEach { style ->
-                        FilterChip(
-                            selected = state.settings.backgroundStyle == style,
-                            onClick = { onBackgroundStyle(style) },
-                            label = { Text(backgroundStyleName(style)) },
-                        )
-                    }
-                }
-                HorizontalDivider()
-                Text(tr("Основной цвет"), fontWeight = FontWeight.Medium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AccentTheme.entries.filterNot { it == AccentTheme.CUSTOM }.forEach { accent ->
-                        FilterChip(
-                            selected = state.settings.accentTheme == accent,
-                            onClick = { onAccentTheme(accent) },
-                            leadingIcon = {
-                                Box(
-                                    Modifier
-                                        .size(15.dp)
-                                        .background(accent.previewColor(), CircleShape),
+                AnimatedVisibility(
+                    visible = state.settings.advancedMode,
+                    enter = fadeIn(tween(260)) + expandVertically(
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                    ),
+                    exit = fadeOut(tween(160)) + shrinkVertically(),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text(tr("Фон"), fontWeight = FontWeight.Medium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BackgroundStyle.entries.forEach { style ->
+                                FilterChip(
+                                    selected = state.settings.backgroundStyle == style,
+                                    onClick = { onBackgroundStyle(style) },
+                                    label = { Text(backgroundStyleName(style)) },
                                 )
-                            },
-                            label = { Text(accentName(accent)) },
-                        )
+                            }
+                        }
+                        HorizontalDivider()
+                        Text(tr("Основной цвет"), fontWeight = FontWeight.Medium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AccentTheme.entries.filterNot { it == AccentTheme.CUSTOM }.forEach { accent ->
+                                FilterChip(
+                                    selected = state.settings.accentTheme == accent,
+                                    onClick = { onAccentTheme(accent) },
+                                    leadingIcon = {
+                                        Box(
+                                            Modifier
+                                                .size(15.dp)
+                                                .background(accent.previewColor(), CircleShape),
+                                        )
+                                    },
+                                    label = { Text(accentName(accent)) },
+                                )
+                            }
+                        }
+                        OutlinedButton(onClick = { showColorDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Box(
+                                Modifier
+                                    .size(18.dp)
+                                    .background(Color(state.settings.customAccentColor), CircleShape),
+                            )
+                            Spacer(Modifier.width(9.dp))
+                            Text("${tr("Свой цвет")} · ${formatColorHex(state.settings.customAccentColor)}")
+                        }
                     }
-                }
-                OutlinedButton(onClick = { showColorDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        Modifier
-                            .size(18.dp)
-                            .background(Color(state.settings.customAccentColor), CircleShape),
-                    )
-                    Spacer(Modifier.width(9.dp))
-                    Text("${tr("Свой цвет")} · ${formatColorHex(state.settings.customAccentColor)}")
                 }
             }
         }
         item {
-            SettingsCard(Icons.Rounded.Timer, tr("Время"), tr("Точная настройка планирования")) {
+            SettingsCard(
+                Icons.Rounded.Timer,
+                tr("Время"),
+                tr(if (state.settings.advancedMode) "Точная настройка планирования" else "За сколько поставить будильник"),
+            ) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(formatLead(state.settings.leadMinutes), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
@@ -1003,47 +1030,57 @@ private fun SettingsScreen(
                 OutlinedButton(onClick = { showLeadDialog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(tr("Задать дни, часы и минуты"))
                 }
-                HorizontalDivider()
-                ToggleRow(
-                    title = tr("Ограничить поздние события"),
-                    subtitle = if (state.settings.latestEventEnabled) tr("Не позже %s", formatClockMinutes(state.settings.latestEventMinutes)) else tr("Ограничение выключено"),
-                    checked = state.settings.latestEventEnabled,
-                    onChecked = onLatestEventEnabled,
-                )
                 AnimatedVisibility(
-                    visible = state.settings.latestEventEnabled,
+                    visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
-                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
                     ),
-                    exit = fadeOut(tween(180)) + shrinkVertically(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
-                    ),
+                    exit = fadeOut(tween(160)) + shrinkVertically(),
                 ) {
-                    SettingsActionRow(
-                        title = tr("Последнее допустимое время"),
-                        subtitle = formatClockMinutes(state.settings.latestEventMinutes),
-                        onClick = {
-                            val hour = state.settings.latestEventMinutes / 60
-                            val minute = state.settings.latestEventMinutes % 60
-                            TimePickerDialog(context, { _, h, m -> onLatestEventMinutes(h * 60 + m) }, hour, minute, true).show()
-                        },
-                    )
-                }
-                HorizontalDivider()
-                Text(tr("Проверять события вперёд"), fontWeight = FontWeight.Medium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(7, 14, 21, 30, 60, 90).forEach { days ->
-                        FilterChip(
-                            selected = state.settings.lookAheadDays == days,
-                            onClick = { onLookAheadDays(days) },
-                            label = { Text(tr("%d дн", days)) },
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        HorizontalDivider()
+                        ToggleRow(
+                            title = tr("Ограничить поздние события"),
+                            subtitle = if (state.settings.latestEventEnabled) tr("Не позже %s", formatClockMinutes(state.settings.latestEventMinutes)) else tr("Ограничение выключено"),
+                            checked = state.settings.latestEventEnabled,
+                            onChecked = onLatestEventEnabled,
                         )
+                        AnimatedVisibility(
+                            visible = state.settings.latestEventEnabled,
+                            enter = fadeIn(tween(260)) + expandVertically(),
+                            exit = fadeOut(tween(180)) + shrinkVertically(),
+                        ) {
+                            SettingsActionRow(
+                                title = tr("Последнее допустимое время"),
+                                subtitle = formatClockMinutes(state.settings.latestEventMinutes),
+                                onClick = {
+                                    val hour = state.settings.latestEventMinutes / 60
+                                    val minute = state.settings.latestEventMinutes % 60
+                                    TimePickerDialog(context, { _, h, m -> onLatestEventMinutes(h * 60 + m) }, hour, minute, true).show()
+                                },
+                            )
+                        }
+                        HorizontalDivider()
+                        Text(tr("Проверять события вперёд"), fontWeight = FontWeight.Medium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(7, 14, 21, 30, 60, 90).forEach { days ->
+                                FilterChip(
+                                    selected = state.settings.lookAheadDays == days,
+                                    onClick = { onLookAheadDays(days) },
+                                    label = { Text(tr("%d дн", days)) },
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
         item {
-            SettingsCard(Icons.Rounded.NotificationsActive, tr("Будильники"), tr("События, звук и повтор сигнала")) {
+            SettingsCard(
+                Icons.Rounded.NotificationsActive,
+                tr("Будильники"),
+                tr(if (state.settings.advancedMode) "События, звук и повтор сигнала" else "События, звук и вибрация"),
+            ) {
                 ToggleRow(
                     title = tr("Напоминать об остальных событиях"),
                     subtitle = tr(if (state.settings.allEventsPerDay) "Первое событие — будильник, остальные — экран без звука" else "Только первое событие дня с будильником"),
@@ -1066,34 +1103,40 @@ private fun SettingsScreen(
                         onChecked = onReminderVibrationEnabled,
                     )
                 }
-                ToggleRow(
-                    title = tr("События на весь день"),
-                    subtitle = tr("Использовать для них выбранное условное время"),
-                    checked = state.settings.includeAllDayEvents,
-                    onChecked = onIncludeAllDayEvents,
-                )
                 AnimatedVisibility(
-                    visible = state.settings.includeAllDayEvents,
+                    visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
-                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
                     ),
-                    exit = fadeOut(tween(180)) + shrinkVertically(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
-                    ),
+                    exit = fadeOut(tween(160)) + shrinkVertically(),
                 ) {
-                    SettingsActionRow(
-                        title = tr("Условное время события"),
-                        subtitle = formatClockMinutes(state.settings.allDayEventMinutes),
-                        onClick = {
-                            TimePickerDialog(
-                                context,
-                                { _, h, m -> onAllDayEventMinutes(h * 60 + m) },
-                                state.settings.allDayEventMinutes / 60,
-                                state.settings.allDayEventMinutes % 60,
-                                true,
-                            ).show()
-                        },
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        ToggleRow(
+                            title = tr("События на весь день"),
+                            subtitle = tr("Использовать для них выбранное условное время"),
+                            checked = state.settings.includeAllDayEvents,
+                            onChecked = onIncludeAllDayEvents,
+                        )
+                        AnimatedVisibility(
+                            visible = state.settings.includeAllDayEvents,
+                            enter = fadeIn(tween(260)) + expandVertically(),
+                            exit = fadeOut(tween(180)) + shrinkVertically(),
+                        ) {
+                            SettingsActionRow(
+                                title = tr("Условное время события"),
+                                subtitle = formatClockMinutes(state.settings.allDayEventMinutes),
+                                onClick = {
+                                    TimePickerDialog(
+                                        context,
+                                        { _, h, m -> onAllDayEventMinutes(h * 60 + m) },
+                                        state.settings.allDayEventMinutes / 60,
+                                        state.settings.allDayEventMinutes % 60,
+                                        true,
+                                    ).show()
+                                },
+                            )
+                        }
+                    }
                 }
                 HorizontalDivider()
                 ToggleRow(
@@ -1123,78 +1166,91 @@ private fun SettingsScreen(
                     checked = state.settings.alarmVibrationEnabled,
                     onChecked = onAlarmVibrationEnabled,
                 )
-                HorizontalDivider()
-                ToggleRow(
-                    title = tr("Упрощённое отключение после времени"),
-                    subtitle = if (state.settings.quickDismiss.enabled) {
-                        tr("После %s без кнопки «Позже»", formatClockMinutes(state.settings.quickDismiss.afterMinutes))
-                    } else {
-                        tr("Всегда показывать «Я встал» и «Позже»")
-                    },
-                    checked = state.settings.quickDismiss.enabled,
-                    onChecked = { enabled ->
-                        onQuickDismiss(state.settings.quickDismiss.copy(enabled = enabled))
-                    },
-                )
                 AnimatedVisibility(
-                    visible = state.settings.quickDismiss.enabled,
+                    visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
-                        animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
+                        animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
                     ),
-                    exit = fadeOut(tween(180)) + shrinkVertically(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
-                    ),
+                    exit = fadeOut(tween(160)) + shrinkVertically(),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SettingsActionRow(
-                            title = tr("Включать упрощённый экран после"),
-                            subtitle = formatClockMinutes(state.settings.quickDismiss.afterMinutes),
-                            onClick = {
-                                TimePickerDialog(
-                                    context,
-                                    { _, h, m ->
-                                        onQuickDismiss(state.settings.quickDismiss.copy(afterMinutes = h * 60 + m))
-                                    },
-                                    state.settings.quickDismiss.afterMinutes / 60,
-                                    state.settings.quickDismiss.afterMinutes % 60,
-                                    true,
-                                ).show()
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        HorizontalDivider()
+                        ToggleRow(
+                            title = tr("Упрощённое отключение после времени"),
+                            subtitle = if (state.settings.quickDismiss.enabled) {
+                                tr("После %s без кнопки «Позже»", formatClockMinutes(state.settings.quickDismiss.afterMinutes))
+                            } else {
+                                tr("Всегда показывать «Я встал» и «Позже»")
+                            },
+                            checked = state.settings.quickDismiss.enabled,
+                            onChecked = { enabled ->
+                                onQuickDismiss(state.settings.quickDismiss.copy(enabled = enabled))
                             },
                         )
-                        Text(tr("Как выключать"), fontWeight = FontWeight.Medium)
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        AnimatedVisibility(
+                            visible = state.settings.quickDismiss.enabled,
+                            enter = fadeIn(tween(260)) + expandVertically(),
+                            exit = fadeOut(tween(180)) + shrinkVertically(),
                         ) {
-                            QuickDismissMode.entries.forEach { mode ->
-                                FilterChip(
-                                    selected = state.settings.quickDismiss.mode == mode,
-                                    onClick = { onQuickDismiss(state.settings.quickDismiss.copy(mode = mode)) },
-                                    label = {
-                                        Text(
-                                            tr(
-                                                if (mode == QuickDismissMode.BUTTON) {
-                                                    "Кнопка «Готово»"
-                                                } else {
-                                                    "Касание экрана"
-                                                },
-                                            ),
-                                        )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                SettingsActionRow(
+                                    title = tr("Включать упрощённый экран после"),
+                                    subtitle = formatClockMinutes(state.settings.quickDismiss.afterMinutes),
+                                    onClick = {
+                                        TimePickerDialog(
+                                            context,
+                                            { _, h, m ->
+                                                onQuickDismiss(state.settings.quickDismiss.copy(afterMinutes = h * 60 + m))
+                                            },
+                                            state.settings.quickDismiss.afterMinutes / 60,
+                                            state.settings.quickDismiss.afterMinutes % 60,
+                                            true,
+                                        ).show()
                                     },
                                 )
+                                Text(tr("Как выключать"), fontWeight = FontWeight.Medium)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    QuickDismissMode.entries.forEach { mode ->
+                                        FilterChip(
+                                            selected = state.settings.quickDismiss.mode == mode,
+                                            onClick = { onQuickDismiss(state.settings.quickDismiss.copy(mode = mode)) },
+                                            label = {
+                                                Text(
+                                                    tr(
+                                                        if (mode == QuickDismissMode.BUTTON) {
+                                                            "Кнопка «Готово»"
+                                                        } else {
+                                                            "Касание экрана"
+                                                        },
+                                                    ),
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
+                        HorizontalDivider()
+                        Text(tr("Отложить сигнал"), fontWeight = FontWeight.Medium)
+                        MinuteChoiceChips(state.settings.snoozeMinutes, listOf(5, 10, 15, 30, 60), onSnoozeMinutes)
+                        Text(tr("Автоматически выключить звук"), fontWeight = FontWeight.Medium)
+                        MinuteChoiceChips(state.settings.autoSilenceMinutes, listOf(1, 5, 10, 15, 30), onAutoSilenceMinutes)
                     }
                 }
-                HorizontalDivider()
-                Text(tr("Отложить сигнал"), fontWeight = FontWeight.Medium)
-                MinuteChoiceChips(state.settings.snoozeMinutes, listOf(5, 10, 15, 30, 60), onSnoozeMinutes)
-                Text(tr("Автоматически выключить звук"), fontWeight = FontWeight.Medium)
-                MinuteChoiceChips(state.settings.autoSilenceMinutes, listOf(1, 5, 10, 15, 30), onAutoSilenceMinutes)
             }
         }
         item {
-            SettingsCard(Icons.Rounded.FlashOn, tr("Сигналы"), tr("Яркость, фонарик и сила вибрации")) {
+            AnimatedVisibility(
+                visible = state.settings.advancedMode,
+                enter = fadeIn(tween(280)) + expandVertically(
+                    animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                ),
+                exit = fadeOut(tween(160)) + shrinkVertically(),
+            ) {
+                SettingsCard(Icons.Rounded.FlashOn, tr("Сигналы"), tr("Яркость, фонарик и сила вибрации")) {
                 SettingsActionRow(
                     title = tr("Первое событие дня"),
                     subtitle = signalEffectsSummary(
@@ -1245,6 +1301,7 @@ private fun SettingsScreen(
                         onVibrationEnabled = onReminderVibrationEnabled,
                         onRequestCamera = onRequestCamera,
                     )
+                }
                 }
             }
         }
@@ -1326,12 +1383,19 @@ private fun SettingsScreen(
             }
         }
         item {
-            SettingsCard(
-                Icons.Rounded.NotificationsActive,
-                tr("Планирование"),
-                tr("Ежедневно в %s", formatClockMinutes(state.settings.dailySyncMinutes)),
+            AnimatedVisibility(
+                visible = state.settings.advancedMode,
+                enter = fadeIn(tween(280)) + expandVertically(
+                    animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                ),
+                exit = fadeOut(tween(160)) + shrinkVertically(),
             ) {
-                SettingsActionRow(
+                SettingsCard(
+                    Icons.Rounded.NotificationsActive,
+                    tr("Планирование"),
+                    tr("Ежедневно в %s", formatClockMinutes(state.settings.dailySyncMinutes)),
+                ) {
+                    SettingsActionRow(
                     title = tr("Время проверки календарей"),
                     subtitle = formatClockMinutes(state.settings.dailySyncMinutes),
                     onClick = {
@@ -1437,11 +1501,12 @@ private fun SettingsScreen(
                         } ?: Text(tr("Сначала нажмите «Проверить сейчас»"), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Button(onClick = onSync, enabled = permissions.calendar && !state.syncing, modifier = Modifier.fillMaxWidth()) {
-                    if (state.syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Rounded.Refresh, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(tr("Проверить сейчас"))
+                    Button(onClick = onSync, enabled = permissions.calendar && !state.syncing, modifier = Modifier.fillMaxWidth()) {
+                        if (state.syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Rounded.Refresh, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Проверить сейчас"))
+                    }
                 }
             }
         }
@@ -1485,63 +1550,71 @@ private fun SettingsScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(tr(if (state.githubConfigured) "Проверить обновления" else "Репозиторий не настроен"))
                 }
-                HorizontalDivider()
-                SettingsActionRow(
-                    title = tr("Все версии"),
-                    subtitle = tr("Скачать стабильную или бета-версию из архива"),
-                    onClick = {
-                        releasesExpanded = !releasesExpanded
-                        if (releasesExpanded && state.availableReleases.isEmpty()) onLoadReleaseCatalog()
-                    },
-                    expanded = releasesExpanded,
-                )
                 AnimatedVisibility(
-                    visible = releasesExpanded,
+                    visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
                     ),
-                    exit = fadeOut(tween(160)) + shrinkVertically(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
-                    ),
+                    exit = fadeOut(tween(160)) + shrinkVertically(),
                 ) {
-                    val beta = state.settings.updateChannel == UpdateChannel.BETA
-                    val releases = state.availableReleases.filter { it.prerelease == beta }
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            tr(if (beta) "Архив бета-версий" else "Архив стабильных версий"),
-                            fontWeight = FontWeight.SemiBold,
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        HorizontalDivider()
+                        SettingsActionRow(
+                            title = tr("Все версии"),
+                            subtitle = tr("Скачать стабильную или бета-версию из архива"),
+                            onClick = {
+                                releasesExpanded = !releasesExpanded
+                                if (releasesExpanded && state.availableReleases.isEmpty()) onLoadReleaseCatalog()
+                            },
+                            expanded = releasesExpanded,
                         )
-                        Text(
-                            tr("Старую версию можно скачать, но Android не установит её поверх более новой."),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        when {
-                            state.releaseCatalogLoading -> CircularProgressIndicator(
-                                modifier = Modifier.align(Alignment.CenterHorizontally).size(28.dp),
-                                strokeWidth = 3.dp,
-                            )
-                            releases.isEmpty() -> {
+                        AnimatedVisibility(
+                            visible = releasesExpanded,
+                            enter = fadeIn(tween(260)) + expandVertically(
+                                animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+                            ),
+                            exit = fadeOut(tween(160)) + shrinkVertically(),
+                        ) {
+                            val beta = state.settings.updateChannel == UpdateChannel.BETA
+                            val releases = state.availableReleases.filter { it.prerelease == beta }
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text(
-                                    tr("В выбранном канале пока нет версий с APK"),
+                                    tr(if (beta) "Архив бета-версий" else "Архив стабильных версий"),
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    tr("Старую версию можно скачать, но Android не установит её поверх более новой."),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                OutlinedButton(
-                                    onClick = onLoadReleaseCatalog,
-                                    enabled = state.githubConfigured,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) { Text(tr("Обновить список")) }
-                            }
-                            else -> releases.take(20).forEach { release ->
-                                ReleaseDownloadRow(
-                                    release = release,
-                                    downloading = state.downloadingReleaseTag == release.tag,
-                                    downloaded = release.tag in state.downloadedReleaseTags,
-                                    downloadEnabled = state.downloadingReleaseTag == null,
-                                    onDownload = { onDownloadRelease(release) },
-                                    onInstall = { onInstallRelease(release) },
-                                )
+                                when {
+                                    state.releaseCatalogLoading -> CircularProgressIndicator(
+                                        modifier = Modifier.align(Alignment.CenterHorizontally).size(28.dp),
+                                        strokeWidth = 3.dp,
+                                    )
+                                    releases.isEmpty() -> {
+                                        Text(
+                                            tr("В выбранном канале пока нет версий с APK"),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        OutlinedButton(
+                                            onClick = onLoadReleaseCatalog,
+                                            enabled = state.githubConfigured,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) { Text(tr("Обновить список")) }
+                                    }
+                                    else -> releases.take(20).forEach { release ->
+                                        ReleaseDownloadRow(
+                                            release = release,
+                                            downloading = state.downloadingReleaseTag == release.tag,
+                                            downloaded = release.tag in state.downloadedReleaseTags,
+                                            downloadEnabled = state.downloadingReleaseTag == null,
+                                            onDownload = { onDownloadRelease(release) },
+                                            onInstall = { onInstallRelease(release) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1856,6 +1929,66 @@ private fun signalEffectsSummary(effects: SignalEffects, vibrationEnabled: Boole
         if (vibrationEnabled) add(tr("вибрация %d%%", effects.vibrationIntensity))
     }
     return enabled.joinToString(" · ").ifBlank { tr("Без дополнительных эффектов") }
+}
+
+@Composable
+private fun AdvancedModeToggle(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    Surface(
+        color = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.animateContentSize(
+            animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .clickable { onEnabledChange(!enabled) }
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(15.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.Settings,
+                    contentDescription = null,
+                    tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(tr("Расширенный режим"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    tr(
+                        if (enabled) {
+                            "Показаны все тонкие настройки"
+                        } else {
+                            "Скрывает сложные настройки и оставляет основные"
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+            )
+        }
+    }
 }
 
 @Composable
