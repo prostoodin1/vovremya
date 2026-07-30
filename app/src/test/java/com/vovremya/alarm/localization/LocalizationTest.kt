@@ -3,6 +3,7 @@ package com.vovremya.alarm.localization
 import java.util.Locale
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -20,7 +21,7 @@ class LocalizationTest {
     }
 
     @Test
-    fun `uses all six supported phone languages`() {
+    fun `uses all sixteen supported phone languages`() {
         val expectedNames = mapOf(
             "ru" to "Вовремя",
             "en" to "On Time",
@@ -28,6 +29,16 @@ class LocalizationTest {
             "fr" to "À l’heure",
             "es" to "A tiempo",
             "uk" to "Вчасно",
+            "it" to "In tempo",
+            "pt" to "Na hora certa",
+            "pl" to "Na czas",
+            "nl" to "Op tijd",
+            "tr" to "Zamanında",
+            "cs" to "Na čas",
+            "ro" to "La Timp",
+            "el" to "Στην Ώρα",
+            "ja" to "オンタイム",
+            "ko" to "정시에",
         )
 
         expectedNames.forEach { (language, expected) ->
@@ -38,9 +49,19 @@ class LocalizationTest {
 
     @Test
     fun `falls back to English for unsupported phone language`() {
-        Locale.setDefault(Locale.forLanguageTag("it"))
+        Locale.setDefault(Locale.forLanguageTag("ar"))
 
         assertEquals("Settings", tr("Настройки"))
+    }
+
+    @Test
+    fun `additional language catalogs are complete and keep format arguments`() {
+        assertEquals(10, additionalTranslations.size)
+        assertTrue(additionalTranslations.values.all { it.size == 331 })
+        assertTrue(additionalTranslations.values.all { catalog -> catalog.values.none(String::isBlank) })
+
+        Locale.setDefault(Locale.ITALIAN)
+        assertEquals("Versione 1.5.0", tr("Версия %s", "1.5.0"))
     }
 
     @Test

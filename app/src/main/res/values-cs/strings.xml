@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Na čas</string>
+    <string name="alarm_channel">Budíky</string>
+    <string name="sync_channel">Plánování</string>
+    <string name="update_channel">Aktualizace</string>
+</resources>

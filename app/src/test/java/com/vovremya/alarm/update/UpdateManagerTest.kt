@@ -20,7 +20,7 @@ class UpdateManagerTest {
     )
 
     @Test
-    fun `stable beta and alpha channels only select their own releases`() {
+    fun `stable and beta channels select their own releases and ignore alpha`() {
         val releases = JSONArray(
             """
             [
@@ -34,7 +34,7 @@ class UpdateManagerTest {
 
         assertEquals("v1.4.0", manager.selectRelease(releases, UpdateChannel.STABLE)?.getString("tag_name"))
         assertEquals("v1.5.0-beta.1", manager.selectRelease(releases, UpdateChannel.BETA)?.getString("tag_name"))
-        assertEquals("v1.7.0-alpha.2", manager.selectRelease(releases, UpdateChannel.ALPHA)?.getString("tag_name"))
+        assertEquals(null, manager.releaseChannel(releases.getJSONObject(1)))
     }
 
     @Test
@@ -45,7 +45,7 @@ class UpdateManagerTest {
     }
 
     @Test
-    fun `release catalog classifies stable beta and alpha apk releases but not drafts`() {
+    fun `release catalog contains stable and beta apk releases but excludes alpha and drafts`() {
         val releases = JSONArray(
             """
             [
@@ -83,9 +83,9 @@ class UpdateManagerTest {
 
         val catalog = manager.parseAvailableReleases(releases)
 
-        assertEquals(listOf("1.7.0-alpha.1", "1.6.0-beta.1", "1.4.0"), catalog.map { it.version })
-        assertEquals(listOf(UpdateChannel.ALPHA, UpdateChannel.BETA, UpdateChannel.STABLE), catalog.map { it.channel })
-        assertEquals(listOf(ReleaseRelation.NEWER, ReleaseRelation.NEWER, ReleaseRelation.OLDER), catalog.map { it.relation })
+        assertEquals(listOf("1.6.0-beta.1", "1.4.0"), catalog.map { it.version })
+        assertEquals(listOf(UpdateChannel.BETA, UpdateChannel.STABLE), catalog.map { it.channel })
+        assertEquals(listOf(ReleaseRelation.NEWER, ReleaseRelation.OLDER), catalog.map { it.relation })
     }
 
     @Test

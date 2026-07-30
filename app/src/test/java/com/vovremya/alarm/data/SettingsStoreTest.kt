@@ -3,6 +3,7 @@ package com.vovremya.alarm.data
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,5 +26,14 @@ class SettingsStoreTest {
 
         store.setAdvancedMode(false)
         assertFalse(store.settings.first().advancedMode)
+    }
+
+    @Test
+    fun `application language is persisted`() = runBlocking {
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+
+        store.setAppLanguageTag("it")
+
+        assertEquals("it", store.settings.first().appLanguageTag)
     }
 }

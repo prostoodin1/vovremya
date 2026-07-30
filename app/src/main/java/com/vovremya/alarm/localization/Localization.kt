@@ -296,18 +296,22 @@ private val translations = listOf(
     t("Все события на сегодня возвращены", "All of today’s events were restored", "Alle heutigen Termine wurden wiederhergestellt", "Tous les événements d’aujourd’hui ont été restaurés", "Se restauraron todos los eventos de hoy", "Усі сьогоднішні події повернено"),
     t("События пропущены пользователем", "Events were skipped by the user", "Termine wurden vom Benutzer übersprungen", "Les événements ont été ignorés par l’utilisateur", "El usuario omitió los eventos", "Події пропущено користувачем"),
     t("Пропущено пользователем", "Skipped by user", "Vom Benutzer übersprungen", "Ignoré par l’utilisateur", "Omitido por el usuario", "Пропущено користувачем"),
+    t("Система", "System", "System", "Système", "Sistema", "Система"),
+    t("Язык, разрешения и сведения о приложении", "Language, permissions and app information", "Sprache, Berechtigungen und App-Informationen", "Langue, autorisations et informations sur l’application", "Idioma, permisos e información de la aplicación", "Мова, дозволи та відомості про застосунок"),
+    t("Язык приложения", "App language", "App-Sprache", "Langue de l’application", "Idioma de la aplicación", "Мова застосунку"),
+    t("Настройки языка Android", "Android language settings", "Android-Spracheinstellungen", "Réglages de langue Android", "Ajustes de idioma de Android", "Налаштування мови Android"),
+    t("Изменить язык приложения через систему", "Change the app language in Android settings", "App-Sprache in den Android-Einstellungen ändern", "Modifier la langue de l’application dans les réglages Android", "Cambiar el idioma de la aplicación en los ajustes de Android", "Змінити мову застосунку в налаштуваннях Android"),
+    t("Системные разрешения", "System permissions", "Systemberechtigungen", "Autorisations système", "Permisos del sistema", "Системні дозволи"),
+    t("Доступы Android для календаря, уведомлений и сигналов", "Android access for calendar, notifications and alarms", "Android-Zugriff für Kalender, Benachrichtigungen und Alarme", "Accès Android au calendrier, aux notifications et aux alarmes", "Accesos de Android para calendario, notificaciones y alarmas", "Доступи Android до календаря, сповіщень і сигналів"),
     t("Канал обновлений", "Update channel", "Update-Kanal", "Canal de mise à jour", "Canal de actualizaciones", "Канал оновлень"),
     t("Стабильная версия", "Stable version", "Stabile Version", "Version stable", "Versión estable", "Стабільна версія"),
     t("Бета-версии", "Beta versions", "Beta-Versionen", "Versions bêta", "Versiones beta", "Бета-версії"),
-    t("Альфа-версии", "Alpha versions", "Alpha-Versionen", "Versions alpha", "Versiones alfa", "Альфа-версії"),
     t("Только проверенные полные версии", "Only tested stable releases", "Nur geprüfte stabile Versionen", "Uniquement les versions stables vérifiées", "Solo versiones estables verificadas", "Лише перевірені стабільні версії"),
     t("Новые функции раньше, но возможны ошибки", "Get new features earlier, but bugs are possible", "Neue Funktionen früher, mögliche Fehler", "Nouvelles fonctions plus tôt, avec des risques d’erreurs", "Nuevas funciones antes, pero puede haber errores", "Нові функції раніше, але можливі помилки"),
-    t("Самые ранние сборки — ошибок может быть больше", "Earliest builds — more bugs are possible", "Früheste Builds – mehr Fehler sind möglich", "Versions les plus précoces — davantage d’erreurs sont possibles", "Compilaciones más tempranas: puede haber más errores", "Найраніші збірки — помилок може бути більше"),
     t("Все версии", "All versions", "Alle Versionen", "Toutes les versions", "Todas las versiones", "Усі версії"),
-    t("Скачать стабильную, бета- или альфа-версию из архива", "Download a stable, beta, or alpha version from the archive", "Stabile, Beta- oder Alpha-Version aus dem Archiv laden", "Télécharger une version stable, bêta ou alpha depuis l’archive", "Descargar una versión estable, beta o alfa del archivo", "Завантажити стабільну, бета- або альфа-версію з архіву"),
+    t("Скачать стабильную или бета-версию из архива", "Download a stable or beta version from the archive", "Stabile oder Beta-Version aus dem Archiv laden", "Télécharger une version stable ou bêta depuis l’archive", "Descargar una versión estable o beta del archivo", "Завантажити стабільну або бета-версію з архіву"),
     t("Архив стабильных версий", "Stable release archive", "Archiv stabiler Versionen", "Archive des versions stables", "Archivo de versiones estables", "Архів стабільних версій"),
     t("Архив бета-версий", "Beta release archive", "Archiv der Beta-Versionen", "Archive des versions bêta", "Archivo de versiones beta", "Архів бета-версій"),
-    t("Архив альфа-версий", "Alpha release archive", "Archiv der Alpha-Versionen", "Archive des versions alpha", "Archivo de versiones alfa", "Архів альфа-версій"),
     t("Для перехода на старую версию приложение сохранит APK в «Загрузки» и покажет нужные шаги.", "To switch to an older version, the app will save the APK to Downloads and show the required steps.", "Für den Wechsel zu einer älteren Version speichert die App die APK unter Downloads und zeigt die nötigen Schritte.", "Pour revenir à une ancienne version, l’application enregistrera l’APK dans Téléchargements et affichera les étapes nécessaires.", "Para cambiar a una versión anterior, la aplicación guardará el APK en Descargas y mostrará los pasos necesarios.", "Для переходу на стару версію застосунок збереже APK у «Завантаження» та покаже потрібні кроки."),
     t("В выбранном канале пока нет версий с APK", "There are no APK releases in this channel yet", "In diesem Kanal gibt es noch keine APK-Versionen", "Aucune version APK dans ce canal pour le moment", "Aún no hay versiones APK en este canal", "У вибраному каналі поки немає версій з APK"),
     t("Обновить список", "Refresh list", "Liste aktualisieren", "Actualiser la liste", "Actualizar lista", "Оновити список"),
@@ -346,19 +350,29 @@ private val translations = listOf(
 
 fun appLocale(): Locale {
     val language = Locale.getDefault().language.lowercase(Locale.ROOT)
-    val tag = if (language in setOf("ru", "en", "de", "fr", "es", "uk")) language else "en"
+    val tag = if (language in setOf(
+            "ru", "en", "de", "fr", "es", "uk",
+            "it", "pt", "pl", "nl", "tr", "cs", "ro", "el", "ja", "ko",
+        )
+    ) {
+        language
+    } else {
+        "en"
+    }
     return Locale.forLanguageTag(tag)
 }
 
 fun tr(source: String, vararg args: Any?): String {
     val translation = translations[source]
-    val value = when (appLocale().language) {
+    val language = appLocale().language
+    val value = when (language) {
         "ru" -> translation?.ru
         "de" -> translation?.de
         "fr" -> translation?.fr
         "es" -> translation?.es
         "uk" -> translation?.uk
-        else -> translation?.en
+        "en" -> translation?.en
+        else -> additionalTranslations[language]?.get(source) ?: translation?.en
     } ?: source
     return if (args.isEmpty()) value else String.format(appLocale(), value, *args)
 }

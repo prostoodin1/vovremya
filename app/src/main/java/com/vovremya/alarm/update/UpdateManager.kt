@@ -175,6 +175,7 @@ class UpdateManager(
             .map(releases::getJSONObject)
             .filterNot { it.optBoolean("draft", false) }
             .mapNotNull { release ->
+                val channel = releaseChannel(release) ?: return@mapNotNull null
                 val tag = release.optString("tag_name")
                 val version = tag.removePrefix("v")
                 if (version.isBlank()) return@mapNotNull null
@@ -189,7 +190,7 @@ class UpdateManager(
                     version = version,
                     name = release.optString("name").ifBlank { tag },
                     prerelease = release.optBoolean("prerelease", false),
-                    channel = releaseChannel(release),
+                    channel = channel,
                     publishedAt = release.optString("published_at"),
                     apkUrl = apk.optString("browser_download_url"),
                     relation = when {
@@ -201,10 +202,10 @@ class UpdateManager(
             }
             .sortedWith { left, right -> compareVersions(right.version, left.version) }
 
-    internal fun releaseChannel(release: JSONObject): UpdateChannel {
+    internal fun releaseChannel(release: JSONObject): UpdateChannel? {
         if (!release.optBoolean("prerelease", false)) return UpdateChannel.STABLE
         val identity = "${release.optString("tag_name")} ${release.optString("name")}".lowercase()
-        return if ("alpha" in identity) UpdateChannel.ALPHA else UpdateChannel.BETA
+        return if ("alpha" in identity) null else UpdateChannel.BETA
     }
 
     private fun download(url: String, destination: File) {

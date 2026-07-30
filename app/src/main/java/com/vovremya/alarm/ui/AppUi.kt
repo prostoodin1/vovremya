@@ -6,6 +6,7 @@
 package com.vovremya.alarm.ui
 
 import android.app.TimePickerDialog
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -43,6 +44,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -84,6 +86,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -134,6 +137,7 @@ import com.vovremya.alarm.data.UpdateChannel
 import com.vovremya.alarm.data.QuickDismissMode
 import com.vovremya.alarm.data.QuickDismissSettings
 import com.vovremya.alarm.localization.appLocale
+import com.vovremya.alarm.localization.AppLanguage
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.theme.Mint
 import com.vovremya.alarm.ui.theme.previewColor
@@ -194,6 +198,8 @@ fun MainApp(
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
     onUpdateChannel: (UpdateChannel) -> Unit,
+    onAppLanguage: (AppLanguage) -> Unit,
+    onOpenLanguageSettings: () -> Unit,
     onAdvancedMode: (Boolean) -> Unit,
     onSkipAlarm: (ScheduledAlarm) -> Unit,
     onRestoreAlarm: (ScheduledAlarm) -> Unit,
@@ -288,6 +294,8 @@ fun MainApp(
                     onSelectAllCalendars = onSelectAllCalendars,
                     onAutomaticUpdates = onAutomaticUpdates,
                     onUpdateChannel = onUpdateChannel,
+                    onAppLanguage = onAppLanguage,
+                    onOpenLanguageSettings = onOpenLanguageSettings,
                     onAdvancedMode = onAdvancedMode,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
@@ -299,7 +307,9 @@ fun MainApp(
                     onInstallRelease = onInstallRelease,
                     onSync = onSync,
                     onRequestCalendar = onRequestCalendar,
+                    onRequestNotifications = onRequestNotifications,
                     onRequestExactAlarms = onRequestExactAlarms,
+                    onRequestFullScreen = onRequestFullScreen,
                 )
             }
         }
@@ -872,6 +882,8 @@ private fun SettingsScreen(
     onSelectAllCalendars: () -> Unit,
     onAutomaticUpdates: (Boolean) -> Unit,
     onUpdateChannel: (UpdateChannel) -> Unit,
+    onAppLanguage: (AppLanguage) -> Unit,
+    onOpenLanguageSettings: () -> Unit,
     onAdvancedMode: (Boolean) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
@@ -883,10 +895,13 @@ private fun SettingsScreen(
     onInstallRelease: (AvailableRelease) -> Unit,
     onSync: () -> Unit,
     onRequestCalendar: () -> Unit,
+    onRequestNotifications: () -> Unit,
     onRequestExactAlarms: () -> Unit,
+    onRequestFullScreen: () -> Unit,
 ) {
     var showLeadDialog by rememberSaveable { mutableStateOf(false) }
     var showColorDialog by rememberSaveable { mutableStateOf(false) }
+    var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     var releasesExpanded by rememberSaveable { mutableStateOf(false) }
     var alarmEffectsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -913,6 +928,16 @@ private fun SettingsScreen(
             onConfirm = {
                 onCustomAccentColor(it)
                 showColorDialog = false
+            },
+        )
+    }
+    if (showLanguageDialog) {
+        LanguagePickerDialog(
+            selected = AppLanguage.fromTag(state.settings.appLanguageTag),
+            onDismiss = { showLanguageDialog = false },
+            onSelect = { language ->
+                showLanguageDialog = false
+                onAppLanguage(language)
             },
         )
     }
@@ -1403,9 +1428,9 @@ private fun SettingsScreen(
                     },
                 )
                 SettingsActionRow(
-                    title = tr(if (permissions.exactAlarms) "Точное планирование включено" else "Разрешить точное время"),
+                    title = tr("Проверить сейчас"),
                     subtitle = state.lastSyncMillis?.let { tr("Последняя проверка %s", formatLastSync(it)) } ?: tr("Ещё не проверялось"),
-                    onClick = if (permissions.exactAlarms) onSync else onRequestExactAlarms,
+                    onClick = onSync,
                 )
                 HorizontalDivider()
                 SettingsActionRow(
@@ -1505,6 +1530,73 @@ private fun SettingsScreen(
             }
         }
         item {
+            val selectedLanguage = AppLanguage.fromTag(state.settings.appLanguageTag)
+            SettingsCard(
+                Icons.Rounded.Settings,
+                tr("Система"),
+                tr("Язык, разрешения и сведения о приложении"),
+            ) {
+                SettingsActionRow(
+                    title = tr("Язык приложения"),
+                    subtitle = if (selectedLanguage == AppLanguage.SYSTEM) {
+                        tr("Как на телефоне")
+                    } else {
+                        selectedLanguage.nativeName
+                    },
+                    onClick = { showLanguageDialog = true },
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    SettingsActionRow(
+                        title = tr("Настройки языка Android"),
+                        subtitle = tr("Изменить язык приложения через систему"),
+                        onClick = onOpenLanguageSettings,
+                    )
+                }
+                HorizontalDivider()
+                Text(tr("Системные разрешения"), fontWeight = FontWeight.SemiBold)
+                Text(
+                    tr("Доступы Android для календаря, уведомлений и сигналов"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                PermissionRow(
+                    tr("Доступ и синхронизация календаря"),
+                    permissions.calendar && permissions.calendarWrite,
+                    onRequestCalendar,
+                )
+                PermissionRow(tr("Уведомления"), permissions.notifications, onRequestNotifications)
+                PermissionRow(tr("Точное время сигнала"), permissions.exactAlarms, onRequestExactAlarms)
+                PermissionRow(tr("Экран будильника"), permissions.fullScreen, onRequestFullScreen)
+                PermissionRow(tr("Фонарик"), permissions.camera, onRequestCamera)
+                HorizontalDivider()
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(18.dp)) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                tr("Экономно для батареи"),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                tr("Одна плановая проверка в сутки и только нужные системные сигналы — без постоянного сервиса."),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = .8f),
+                            )
+                        }
+                    }
+                }
+                Text(
+                    tr("Версия %s", BuildConfig.VERSION_NAME),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+        item {
             SettingsCard(Icons.Rounded.SystemUpdate, tr("Обновления"), tr("Через GitHub Releases")) {
                 ToggleRow(
                     title = tr("Расширенный режим"),
@@ -1534,18 +1626,12 @@ private fun SettingsScreen(
                         onClick = { onUpdateChannel(UpdateChannel.BETA) },
                         label = { Text(tr("Бета-версии")) },
                     )
-                    FilterChip(
-                        selected = state.settings.updateChannel == UpdateChannel.ALPHA,
-                        onClick = { onUpdateChannel(UpdateChannel.ALPHA) },
-                        label = { Text(tr("Альфа-версии")) },
-                    )
                 }
                 Text(
                     tr(
                         when (state.settings.updateChannel) {
                             UpdateChannel.STABLE -> "Только проверенные полные версии"
                             UpdateChannel.BETA -> "Новые функции раньше, но возможны ошибки"
-                            UpdateChannel.ALPHA -> "Самые ранние сборки — ошибок может быть больше"
                         },
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -1573,7 +1659,7 @@ private fun SettingsScreen(
                         HorizontalDivider()
                         SettingsActionRow(
                             title = tr("Все версии"),
-                            subtitle = tr("Скачать стабильную, бета- или альфа-версию из архива"),
+                            subtitle = tr("Скачать стабильную или бета-версию из архива"),
                             onClick = {
                                 releasesExpanded = !releasesExpanded
                                 if (releasesExpanded && state.availableReleases.isEmpty()) onLoadReleaseCatalog()
@@ -1595,7 +1681,6 @@ private fun SettingsScreen(
                                         when (channel) {
                                             UpdateChannel.STABLE -> "Архив стабильных версий"
                                             UpdateChannel.BETA -> "Архив бета-версий"
-                                            UpdateChannel.ALPHA -> "Архив альфа-версий"
                                         },
                                     ),
                                     fontWeight = FontWeight.SemiBold,
@@ -1639,29 +1724,56 @@ private fun SettingsScreen(
                 }
             }
         }
-        item {
-            Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(22.dp)) {
-                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(tr("Экономно для батареи"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(tr("Одна плановая проверка в сутки и только нужные системные сигналы — без постоянного сервиса."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = .8f))
+        item { Spacer(Modifier.height(8.dp)) }
+    }
+}
+
+@Composable
+private fun LanguagePickerDialog(
+    selected: AppLanguage,
+    onDismiss: () -> Unit,
+    onSelect: (AppLanguage) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Язык приложения")) },
+        text = {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                items(AppLanguage.entries, key = AppLanguage::name) { language ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onSelect(language) }
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = selected == language,
+                            onClick = { onSelect(language) },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (language == AppLanguage.SYSTEM) tr("Как на телефоне") else language.nativeName,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            if (language != AppLanguage.SYSTEM) {
+                                Text(
+                                    language.tag.uppercase(appLocale()),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
-        }
-        item {
-            Text(
-                tr("Версия %s", BuildConfig.VERSION_NAME),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-        }
-        item { Spacer(Modifier.height(8.dp)) }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(tr("Готово")) }
+        },
+    )
 }
 
 @Composable

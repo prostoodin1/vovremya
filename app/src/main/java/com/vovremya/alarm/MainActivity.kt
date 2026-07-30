@@ -29,6 +29,7 @@ import com.vovremya.alarm.ui.MainApp
 import com.vovremya.alarm.ui.MainViewModel
 import com.vovremya.alarm.ui.PermissionState
 import com.vovremya.alarm.ui.theme.VovremyaTheme
+import com.vovremya.alarm.localization.AppLanguageManager
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(lifecycle) {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
+                            viewModel.syncAppLanguageTag(AppLanguageManager.syncFromAndroid(this@MainActivity))
                             permissions = readPermissions()
                             if (permissions.calendar) {
                                 viewModel.onCalendarPermissionAvailable()
@@ -134,6 +136,18 @@ class MainActivity : ComponentActivity() {
                     onSelectAllCalendars = viewModel::selectAllCalendars,
                     onAutomaticUpdates = viewModel::setAutomaticUpdates,
                     onUpdateChannel = viewModel::setUpdateChannel,
+                    onAppLanguage = { language ->
+                        viewModel.setAppLanguageTag(language.tag)
+                        AppLanguageManager.setLanguage(this@MainActivity, language)
+                    },
+                    onOpenLanguageSettings = {
+                        val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            Settings.ACTION_APP_LOCALE_SETTINGS
+                        } else {
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                        }
+                        startActivity(Intent(action, Uri.parse("package:$packageName")))
+                    },
                     onAdvancedMode = viewModel::setAdvancedMode,
                     onSkipAlarm = viewModel::skipAlarm,
                     onRestoreAlarm = viewModel::restoreAlarm,

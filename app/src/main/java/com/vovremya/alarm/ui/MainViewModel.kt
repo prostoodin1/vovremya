@@ -278,6 +278,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { container.settingsStore.setUpdateChannel(channel) }
     }
 
+    fun setAppLanguageTag(tag: String) {
+        viewModelScope.launch { container.settingsStore.setAppLanguageTag(tag) }
+    }
+
+    fun syncAppLanguageTag(tag: String) {
+        if (state.value.settings.appLanguageTag != tag) setAppLanguageTag(tag)
+    }
+
     fun setAdvancedMode(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setAdvancedMode(enabled) }
     }

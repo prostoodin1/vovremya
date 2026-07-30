@@ -28,6 +28,7 @@ data class AppSettings(
     val selectedCalendarIds: Set<Long> = emptySet(),
     val automaticUpdates: Boolean = true,
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
+    val appLanguageTag: String = "",
     val skippedEventKeys: Set<String> = emptySet(),
     val skippedDates: Set<LocalDate> = emptySet(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -38,7 +39,7 @@ data class AppSettings(
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-enum class UpdateChannel { STABLE, BETA, ALPHA }
+enum class UpdateChannel { STABLE, BETA }
 
 enum class TorchMode { STEADY, BLINK }
 

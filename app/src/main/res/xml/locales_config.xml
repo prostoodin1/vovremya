@@ -6,4 +6,14 @@
     <locale android:name="fr" />
     <locale android:name="es" />
     <locale android:name="uk" />
+    <locale android:name="it" />
+    <locale android:name="pt" />
+    <locale android:name="pl" />
+    <locale android:name="nl" />
+    <locale android:name="tr" />
+    <locale android:name="cs" />
+    <locale android:name="ro" />
+    <locale android:name="el" />
+    <locale android:name="ja" />
+    <locale android:name="ko" />
 </locale-config>

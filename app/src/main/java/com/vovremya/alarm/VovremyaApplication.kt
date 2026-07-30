@@ -1,6 +1,8 @@
 package com.vovremya.alarm
 
 import android.app.Application
+import android.content.Context
+import com.vovremya.alarm.localization.AppLanguageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,8 +13,13 @@ class VovremyaApplication : Application() {
     lateinit var container: AppContainer
         private set
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(AppLanguageManager.wrapBaseContext(base))
+    }
+
     override fun onCreate() {
         super.onCreate()
+        AppLanguageManager.applyStoredLanguage(this)
         container = AppContainer(this)
         container.notificationHelper.createChannels()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {

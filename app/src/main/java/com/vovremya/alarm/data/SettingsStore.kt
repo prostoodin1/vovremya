@@ -57,6 +57,7 @@ class SettingsStore(private val context: Context) {
         val calendarIds = stringPreferencesKey("calendar_ids")
         val automaticUpdates = booleanPreferencesKey("automatic_updates")
         val updateChannel = stringPreferencesKey("update_channel")
+        val appLanguageTag = stringPreferencesKey("app_language_tag")
         val skippedEventKeys = stringPreferencesKey("skipped_event_keys")
         val skippedDates = stringPreferencesKey("skipped_dates")
         val skippedAlarms = stringPreferencesKey("skipped_alarms")
@@ -172,6 +173,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setUpdateChannel(value: UpdateChannel) = context.vovremyaDataStore.edit {
         it[Keys.updateChannel] = value.name
+    }
+
+    suspend fun setAppLanguageTag(value: String) = context.vovremyaDataStore.edit {
+        it[Keys.appLanguageTag] = value
     }
 
     suspend fun skipAlarm(alarm: ScheduledAlarm) = context.vovremyaDataStore.edit { preferences ->
@@ -334,6 +339,7 @@ class SettingsStore(private val context: Context) {
             updateChannel = preferences[Keys.updateChannel]
                 ?.let { stored -> UpdateChannel.entries.firstOrNull { it.name == stored } }
                 ?: UpdateChannel.STABLE,
+            appLanguageTag = preferences[Keys.appLanguageTag].orEmpty(),
             skippedEventKeys = decodeStringSet(preferences[Keys.skippedEventKeys]),
             skippedDates = decodeDates(preferences[Keys.skippedDates]),
             themeMode = preferences[Keys.themeMode]
