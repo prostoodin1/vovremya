@@ -331,6 +331,65 @@ class EventSelectorTest {
         assertEquals(true, result.alarms.single().allDay)
     }
 
+    @Test
+    fun `unselected calendars become silent without replacing selected daily alarm`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val result = EventSelector.select(
+            listOf(
+                event(1, time(2026, 7, 15, 8, 0), calendarId = 99),
+                event(2, time(2026, 7, 15, 10, 0), calendarId = 10),
+                event(3, time(2026, 7, 15, 12, 0), calendarId = 99),
+            ),
+            AppSettings(
+                leadMinutes = 30,
+                selectedCalendarIds = setOf(10),
+                includeUnselectedCalendarsAsSilent = true,
+                allEventsPerDay = false,
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(listOf(1L, 2L, 3L), result.alarms.map { it.eventId })
+        assertEquals(
+            listOf(AlarmDelivery.SILENT_REMINDER, AlarmDelivery.ALARM, AlarmDelivery.SILENT_REMINDER),
+            result.alarms.map { it.delivery },
+        )
+        assertEquals(listOf(true, false, true), result.alarms.map { it.fromUnselectedCalendar })
+        assertEquals(listOf(false, true, false), result.alarms.map { it.soundEnabled })
+        assertEquals(0, result.excludedCalendar)
+    }
+
+    @Test
+    fun `unselected calendars remain excluded when silent option is off`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val result = EventSelector.select(
+            listOf(event(1, time(2026, 7, 15, 12, 0), calendarId = 99)),
+            AppSettings(selectedCalendarIds = setOf(10)),
+            now,
+            zone,
+        )
+
+        assertEquals(emptyList<Long>(), result.alarms.map { it.eventId })
+        assertEquals(1, result.excludedCalendar)
+    }
+
+    @Test
+    fun `important title marks every matching occurrence case insensitively`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val result = EventSelector.select(
+            listOf(
+                event(1, time(2026, 7, 15, 12, 0)).copy(title = "Dentist"),
+                event(2, time(2026, 7, 16, 12, 0)).copy(title = "DENTIST"),
+            ),
+            AppSettings(importantEventTitles = setOf("dentist")),
+            now,
+            zone,
+        )
+
+        assertEquals(listOf(true, true), result.alarms.map { it.isImportant })
+    }
+
     private fun event(id: Long, start: Long, calendarId: Long = 10) = CalendarEvent(
         eventId = id,
         instanceStartMillis = start,

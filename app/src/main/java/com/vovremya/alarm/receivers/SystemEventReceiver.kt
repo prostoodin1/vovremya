@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.vovremya.alarm.VovremyaApplication
+import com.vovremya.alarm.update.UpdateNightScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,6 +19,7 @@ class SystemEventReceiver : BroadcastReceiver() {
             try {
                 val settings = container.settingsStore.settings.first()
                 container.dailySyncScheduler.scheduleNext(settings.dailySyncMinutes)
+                UpdateNightScheduler(context).reschedule()
                 if (container.calendarRepository.hasPermission()) {
                     if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
                         container.alarmScheduler.rescheduleSaved()

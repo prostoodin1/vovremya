@@ -10,6 +10,8 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -17,6 +19,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -56,6 +59,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -64,11 +68,15 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.Button
@@ -84,6 +92,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -94,11 +108,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -113,6 +131,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
@@ -128,6 +147,7 @@ import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
 import com.vovremya.alarm.data.EventSource
+import com.vovremya.alarm.data.NavigationStyle
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SignalEffects
 import com.vovremya.alarm.data.SyncDiagnostics
@@ -151,6 +171,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class PermissionState(
@@ -164,7 +185,33 @@ data class PermissionState(
     val allGranted: Boolean get() = calendar && calendarWrite && notifications && exactAlarms && fullScreen
 }
 
-private enum class Screen { Home, Settings }
+private enum class Screen { Home, Important, AllEvents, Settings }
+
+private val LocalAnimationsEnabled = staticCompositionLocalOf { true }
+
+private fun visibleScreens(state: MainUiState): List<Screen> = buildList {
+    add(Screen.Home)
+    if (state.settings.showImportantTab) add(Screen.Important)
+    if (state.settings.showAllEventsTab) add(Screen.AllEvents)
+    add(Screen.Settings)
+}
+
+private fun screenIcon(screen: Screen): ImageVector = when (screen) {
+    Screen.Home -> Icons.Rounded.Home
+    Screen.Important -> Icons.Rounded.Star
+    Screen.AllEvents -> Icons.AutoMirrored.Rounded.List
+    Screen.Settings -> Icons.Rounded.Settings
+}
+
+@Composable
+private fun screenLabel(screen: Screen): String = tr(
+    when (screen) {
+        Screen.Home -> "Главная"
+        Screen.Important -> "Важные"
+        Screen.AllEvents -> "Все мероприятия"
+        Screen.Settings -> "Настройки"
+    },
+)
 
 @Composable
 fun MainApp(
@@ -201,6 +248,13 @@ fun MainApp(
     onAppLanguage: (AppLanguage) -> Unit,
     onOpenLanguageSettings: () -> Unit,
     onAdvancedMode: (Boolean) -> Unit,
+    onNavigationStyle: (NavigationStyle) -> Unit,
+    onBottomBarHideSeconds: (Int) -> Unit,
+    onReduceAnimations: (Boolean) -> Unit,
+    onToggleImportantEvent: (String) -> Unit,
+    onShowImportantTab: (Boolean) -> Unit,
+    onIncludeUnselectedCalendars: (Boolean) -> Unit,
+    onShowAllEventsTab: (Boolean) -> Unit,
     onSkipAlarm: (ScheduledAlarm) -> Unit,
     onRestoreAlarm: (ScheduledAlarm) -> Unit,
     onSkipAllToday: () -> Unit,
@@ -216,47 +270,47 @@ fun MainApp(
     onMessageShown: () -> Unit,
 ) {
     var screen by rememberSaveable { mutableStateOf(Screen.Home) }
+    var bottomBarVisible by rememberSaveable { mutableStateOf(true) }
+    var interactionTick by rememberSaveable { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    BackHandler(screen == Screen.Settings) { screen = Screen.Home }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val destinations = visibleScreens(state)
+    BackHandler(screen != Screen.Home) { screen = Screen.Home }
+    LaunchedEffect(destinations, screen) {
+        if (screen !in destinations) screen = Screen.Home
+    }
+    LaunchedEffect(
+        state.settings.navigationStyle,
+        state.settings.bottomBarHideSeconds,
+        interactionTick,
+    ) {
+        bottomBarVisible = true
+        if (
+            state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR &&
+            state.settings.bottomBarHideSeconds > 0
+        ) {
+            delay(state.settings.bottomBarHideSeconds * 1_000L)
+            bottomBarVisible = false
+        }
+    }
     LaunchedEffect(state.message) {
         state.message?.let {
             scope.launch { snackbar.showSnackbar(it) }
             onMessageShown()
         }
     }
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.safeDrawing,
-    ) { padding ->
-        AnimatedContent(
-            targetState = screen,
-            transitionSpec = {
-                if (targetState == Screen.Settings) {
-                    (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 330f)) { it / 3 } +
-                        fadeIn(tween(280))) togetherWith
-                        (slideOutHorizontally(spring(dampingRatio = .92f, stiffness = 430f)) { -it / 5 } +
-                            fadeOut(tween(210)))
-                } else {
-                    (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 330f)) { -it / 3 } +
-                        fadeIn(tween(280))) togetherWith
-                        (slideOutHorizontally(spring(dampingRatio = .92f, stiffness = 430f)) { it / 5 } +
-                            fadeOut(tween(210)))
-                }.using(
-                    SizeTransform(clip = false) { _, _ ->
-                        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
-                    },
-                )
-            },
-            label = "screen",
-            modifier = Modifier.fillMaxSize().padding(padding),
-        ) { target ->
+    val openDrawer = { scope.launch { drawerState.open() }; Unit }
+    val renderScreen: @Composable (Screen) -> Unit = { target ->
             when (target) {
                 Screen.Home -> HomeScreen(
                     state = state,
                     permissions = permissions,
+                    navigationStyle = state.settings.navigationStyle,
+                    onMenu = openDrawer,
                     onSettings = { screen = Screen.Settings },
+                    onImportant = { screen = Screen.Important },
+                    onAllEvents = { screen = Screen.AllEvents },
                     onRequestCalendar = onRequestCalendar,
                     onRequestNotifications = onRequestNotifications,
                     onRequestExactAlarms = onRequestExactAlarms,
@@ -267,9 +321,29 @@ fun MainApp(
                     onSkipAllToday = onSkipAllToday,
                     onRestoreAllToday = onRestoreAllToday,
                 )
+                Screen.Important -> EventListScreen(
+                    title = tr("Важные мероприятия"),
+                    emptyText = tr("Важных мероприятий пока нет"),
+                    alarms = state.alarms.filter(ScheduledAlarm::isImportant),
+                    navigationStyle = state.settings.navigationStyle,
+                    onBack = { screen = Screen.Home },
+                    onMenu = openDrawer,
+                    onSkipAlarm = onSkipAlarm,
+                )
+                Screen.AllEvents -> EventListScreen(
+                    title = tr("Все мероприятия"),
+                    emptyText = tr("Мероприятий пока нет"),
+                    alarms = state.alarms,
+                    navigationStyle = state.settings.navigationStyle,
+                    onBack = { screen = Screen.Home },
+                    onMenu = openDrawer,
+                    onSkipAlarm = onSkipAlarm,
+                )
                 Screen.Settings -> SettingsScreen(
                     state = state,
                     permissions = permissions,
+                    navigationStyle = state.settings.navigationStyle,
+                    onMenu = openDrawer,
                     onBack = { screen = Screen.Home },
                     onLeadMinutes = onLeadMinutes,
                     onLatestEventMinutes = onLatestEventMinutes,
@@ -297,6 +371,13 @@ fun MainApp(
                     onAppLanguage = onAppLanguage,
                     onOpenLanguageSettings = onOpenLanguageSettings,
                     onAdvancedMode = onAdvancedMode,
+                    onNavigationStyle = onNavigationStyle,
+                    onBottomBarHideSeconds = onBottomBarHideSeconds,
+                    onReduceAnimations = onReduceAnimations,
+                    onToggleImportantEvent = onToggleImportantEvent,
+                    onShowImportantTab = onShowImportantTab,
+                    onIncludeUnselectedCalendars = onIncludeUnselectedCalendars,
+                    onShowAllEventsTab = onShowAllEventsTab,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
                     onCustomAccentColor = onCustomAccentColor,
@@ -312,6 +393,118 @@ fun MainApp(
                     onRequestFullScreen = onRequestFullScreen,
                 )
             }
+    }
+    val scaffoldContent: @Composable () -> Unit = {
+        val interactionModifier = if (state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) {
+            Modifier.pointerInput(state.settings.navigationStyle) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent()
+                        interactionTick++
+                    }
+                }
+            }
+        } else {
+            Modifier
+        }
+        Box(modifier = interactionModifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                snackbarHost = {
+                    SnackbarHost(
+                        hostState = snackbar,
+                        modifier = Modifier.padding(
+                            bottom = if (state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) 112.dp else 0.dp,
+                        ),
+                    )
+                },
+                containerColor = MaterialTheme.colorScheme.background,
+                contentWindowInsets = WindowInsets.safeDrawing,
+            ) { padding ->
+                val contentModifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(
+                        bottom = if (state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) 112.dp else 0.dp,
+                    )
+                if (state.settings.reduceAnimations) {
+                    Box(contentModifier) { renderScreen(screen) }
+                } else {
+                    AnimatedContent(
+                        targetState = screen,
+                        transitionSpec = {
+                            (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 330f)) { it / 4 } +
+                                fadeIn(tween(260))) togetherWith
+                                (slideOutHorizontally(spring(dampingRatio = .92f, stiffness = 430f)) { -it / 6 } +
+                                    fadeOut(tween(190))) using
+                                SizeTransform(clip = false) { _, _ ->
+                                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
+                                }
+                        },
+                        label = "screen",
+                        modifier = contentModifier,
+                    ) { target -> renderScreen(target) }
+                }
+            }
+            MotionVisibility(
+                visible = state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR && bottomBarVisible,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(220)) + expandVertically(expandFrom = Alignment.Bottom),
+                exit = fadeOut(tween(160)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+            ) {
+                Surface(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .94f),
+                    shadowElevation = 10.dp,
+                    tonalElevation = 8.dp,
+                ) {
+                    NavigationBar(containerColor = Color.Transparent) {
+                        destinations.forEach { destination ->
+                            NavigationBarItem(
+                                selected = screen == destination,
+                                onClick = {
+                                    screen = destination
+                                    interactionTick++
+                                },
+                                icon = { Icon(screenIcon(destination), screenLabel(destination)) },
+                                label = { Text(screenLabel(destination), maxLines = 1) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(LocalAnimationsEnabled provides !state.settings.reduceAnimations) {
+        if (state.settings.navigationStyle == NavigationStyle.DRAWER) {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    ModalDrawerSheet {
+                        Text(
+                            tr("Вовремя"),
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        destinations.forEach { destination ->
+                            NavigationDrawerItem(
+                                label = { Text(screenLabel(destination)) },
+                                selected = screen == destination,
+                                icon = { Icon(screenIcon(destination), null) },
+                                onClick = {
+                                    screen = destination
+                                    scope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
+                        }
+                    }
+                },
+            ) { scaffoldContent() }
+        } else {
+            scaffoldContent()
         }
     }
 }
@@ -320,7 +513,11 @@ fun MainApp(
 private fun HomeScreen(
     state: MainUiState,
     permissions: PermissionState,
+    navigationStyle: NavigationStyle,
+    onMenu: () -> Unit,
     onSettings: () -> Unit,
+    onImportant: () -> Unit,
+    onAllEvents: () -> Unit,
     onRequestCalendar: () -> Unit,
     onRequestNotifications: () -> Unit,
     onRequestExactAlarms: () -> Unit,
@@ -340,9 +537,19 @@ private fun HomeScreen(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { HomeHeader(onSettings) }
         item {
-            AnimatedVisibility(
+            HomeHeader(
+                navigationStyle = navigationStyle,
+                showImportant = state.settings.showImportantTab,
+                showAllEvents = state.settings.showAllEventsTab,
+                onMenu = onMenu,
+                onSettings = onSettings,
+                onImportant = onImportant,
+                onAllEvents = onAllEvents,
+            )
+        }
+        item {
+            MotionVisibility(
                 visible = !permissions.allGranted,
                 enter = fadeIn(tween(320)) + expandVertically(
                     animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -426,11 +633,15 @@ private fun HomeScreen(
                     },
                     onSkip = { onSkipAlarm(alarm) },
                     onRestore = {},
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = tween(360),
-                        placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
-                        fadeOutSpec = tween(220),
-                    ),
+                    modifier = if (LocalAnimationsEnabled.current) {
+                        Modifier.animateItem(
+                            fadeInSpec = tween(360),
+                            placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
+                            fadeOutSpec = tween(220),
+                        )
+                    } else {
+                        Modifier
+                    },
                 )
             }
         }
@@ -453,11 +664,15 @@ private fun HomeScreen(
                     },
                     onSkip = {},
                     onRestore = { onRestoreAlarm(alarm) },
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = tween(360),
-                        placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
-                        fadeOutSpec = tween(220),
-                    ),
+                    modifier = if (LocalAnimationsEnabled.current) {
+                        Modifier.animateItem(
+                            fadeInSpec = tween(360),
+                            placementSpec = spring(dampingRatio = .86f, stiffness = 360f),
+                            fadeOutSpec = tween(220),
+                        )
+                    } else {
+                        Modifier
+                    },
                 )
             }
         }
@@ -476,8 +691,89 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(onSettings: () -> Unit) {
+private fun EventListScreen(
+    title: String,
+    emptyText: String,
+    alarms: List<ScheduledAlarm>,
+    navigationStyle: NavigationStyle,
+    onBack: () -> Unit,
+    onMenu: () -> Unit,
+    onSkipAlarm: (ScheduledAlarm) -> Unit,
+) {
+    var revealedAlarm by rememberSaveable { mutableStateOf<String?>(null) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item { SectionHeader(title, navigationStyle, onBack, onMenu) }
+        if (alarms.isEmpty()) {
+            item {
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Rounded.EventAvailable, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text(emptyText, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            }
+        } else {
+            items(alarms, key = ScheduledAlarm::key) { alarm ->
+                AlarmRow(
+                    alarm = alarm,
+                    cancelled = false,
+                    revealed = revealedAlarm == alarm.key,
+                    onRevealedChange = { open -> revealedAlarm = if (open) alarm.key else null },
+                    onSkip = { onSkipAlarm(alarm) },
+                    onRestore = {},
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    navigationStyle: NavigationStyle,
+    onBack: () -> Unit,
+    onMenu: () -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+        when (navigationStyle) {
+            NavigationStyle.CLASSIC -> IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад"))
+            }
+            NavigationStyle.DRAWER -> IconButton(onClick = onMenu) {
+                Icon(Icons.Rounded.Menu, tr("Меню"))
+            }
+            NavigationStyle.BOTTOM_BAR -> Unit
+        }
+        if (navigationStyle != NavigationStyle.BOTTOM_BAR) Spacer(Modifier.width(4.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun HomeHeader(
+    navigationStyle: NavigationStyle,
+    showImportant: Boolean,
+    showAllEvents: Boolean,
+    onMenu: () -> Unit,
+    onSettings: () -> Unit,
+    onImportant: () -> Unit,
+    onAllEvents: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (navigationStyle == NavigationStyle.DRAWER) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                IconButton(onClick = onMenu) { Icon(Icons.Rounded.Menu, tr("Меню")) }
+            }
+            Spacer(Modifier.width(12.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(tr("Вовремя"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -502,8 +798,16 @@ private fun HomeHeader(onSettings: () -> Unit) {
                 }
             }
         }
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-            IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Настройки")) }
+        if (navigationStyle == NavigationStyle.CLASSIC) {
+            if (showImportant) {
+                IconButton(onClick = onImportant) { Icon(Icons.Rounded.Star, tr("Важные")) }
+            }
+            if (showAllEvents) {
+                IconButton(onClick = onAllEvents) { Icon(Icons.AutoMirrored.Rounded.List, tr("Все мероприятия")) }
+            }
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Настройки")) }
+            }
         }
     }
 }
@@ -588,45 +892,64 @@ private fun NextAlarmCardSurface(alarm: ScheduledAlarm?, modifier: Modifier) {
     val cardText = MaterialTheme.colorScheme.onPrimary
     Card(
         shape = RoundedCornerShape(30.dp),
-        modifier = modifier.fillMaxWidth().animateContentSize(
-            spring(dampingRatio = .86f, stiffness = 360f),
-        ),
+        modifier = if (LocalAnimationsEnabled.current) {
+            modifier.fillMaxWidth().animateContentSize(
+                spring(dampingRatio = .86f, stiffness = 360f),
+            )
+        } else {
+            modifier.fillMaxWidth()
+        },
     ) {
         Box(Modifier.fillMaxWidth().background(Brush.linearGradient(start)).padding(24.dp)) {
-            AnimatedContent(
-                targetState = alarm,
-                contentKey = { it?.key },
-                transitionSpec = {
-                    (fadeIn(tween(360)) + scaleIn(tween(420), initialScale = .975f)) togetherWith
-                        (fadeOut(tween(210)) + scaleOut(tween(240), targetScale = .985f))
-                },
-                label = "nextAlarm",
-            ) { displayedAlarm ->
-                if (displayedAlarm == null) {
-                    Column(Modifier.padding(vertical = 18.dp)) {
-                        Icon(Icons.Rounded.EventAvailable, null, tint = cardText.copy(alpha = .82f), modifier = Modifier.size(36.dp))
-                        Spacer(Modifier.height(18.dp))
-                        Text(tr("Всё спокойно"), color = cardText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text(tr("Следующий будильник появится после проверки календаря"), color = cardText.copy(alpha = .82f))
+            if (LocalAnimationsEnabled.current) {
+                AnimatedContent(
+                    targetState = alarm,
+                    contentKey = { it?.key },
+                    transitionSpec = {
+                        (fadeIn(tween(360)) + scaleIn(tween(420), initialScale = .975f)) togetherWith
+                            (fadeOut(tween(210)) + scaleOut(tween(240), targetScale = .985f))
+                    },
+                    label = "nextAlarm",
+                ) { displayedAlarm -> NextAlarmContent(displayedAlarm, cardText) }
+            } else {
+                NextAlarmContent(alarm, cardText)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NextAlarmContent(displayedAlarm: ScheduledAlarm?, cardText: Color) {
+    if (displayedAlarm == null) {
+        Column(Modifier.padding(vertical = 18.dp)) {
+            Icon(Icons.Rounded.EventAvailable, null, tint = cardText.copy(alpha = .82f), modifier = Modifier.size(36.dp))
+            Spacer(Modifier.height(18.dp))
+            Text(tr("Всё спокойно"), color = cardText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(tr("Следующий будильник появится после проверки календаря"), color = cardText.copy(alpha = .82f))
+        }
+    } else {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Alarm, null, tint = cardText.copy(alpha = .82f))
+                Spacer(Modifier.width(8.dp))
+                Text(tr("СЛЕДУЮЩИЙ БУДИЛЬНИК"), color = cardText.copy(alpha = .82f), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(formatTime(displayedAlarm.alarmAtMillis), color = cardText, fontSize = 58.sp, lineHeight = 62.sp, fontWeight = FontWeight.Light)
+            Text(formatDayLong(displayedAlarm.alarmAtMillis), color = cardText.copy(alpha = .9f), style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(22.dp))
+            Surface(color = cardText.copy(alpha = .13f), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(displayedAlarm.title, color = cardText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (displayedAlarm.isImportant) {
+                        Text(
+                            tr("★ Важное мероприятие"),
+                            color = cardText.copy(alpha = .9f),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                } else {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Alarm, null, tint = cardText.copy(alpha = .82f))
-                            Spacer(Modifier.width(8.dp))
-                            Text(tr("СЛЕДУЮЩИЙ БУДИЛЬНИК"), color = cardText.copy(alpha = .82f), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                        }
-                        Spacer(Modifier.height(18.dp))
-                        Text(formatTime(displayedAlarm.alarmAtMillis), color = cardText, fontSize = 58.sp, lineHeight = 62.sp, fontWeight = FontWeight.Light)
-                        Text(formatDayLong(displayedAlarm.alarmAtMillis), color = cardText.copy(alpha = .9f), style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(22.dp))
-                        Surface(color = cardText.copy(alpha = .13f), shape = RoundedCornerShape(18.dp)) {
-                            Column(Modifier.padding(14.dp)) {
-                                Text(displayedAlarm.title, color = cardText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(tr("Событие в %s · %s", formatTime(displayedAlarm.eventStartMillis), timeUntil(displayedAlarm.alarmAtMillis)), color = cardText.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
+                    Text(tr("Событие в %s · %s", formatTime(displayedAlarm.eventStartMillis), timeUntil(displayedAlarm.alarmAtMillis)), color = cardText.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -672,7 +995,24 @@ private fun AlarmRow(
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(formatDayShort(alarm.alarmAtMillis), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(alarm.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                alarm.title,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (alarm.isImportant) {
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    Icons.Rounded.Star,
+                                    tr("Важное мероприятие"),
+                                    modifier = Modifier.size(17.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(7.dp).background(Color(alarm.calendarColor), CircleShape))
                             Spacer(Modifier.width(6.dp))
@@ -698,6 +1038,7 @@ private fun AlarmRow(
                             tr(
                                 when {
                                     !reminder -> "Будильник · звук по настройкам"
+                                    alarm.fromUnselectedCalendar -> "Невыбранный календарь · тихое напоминание"
                                     alarm.vibrationEnabled -> "Напоминание · только вибрация"
                                     else -> "Тихое напоминание · без звука и вибрации"
                                 },
@@ -745,8 +1086,13 @@ private fun RevealableAlarmContainer(
     val maxOffsetPx = with(density) { 180.dp.toPx() }
     val offset = remember(itemKey) { Animatable(0f) }
     val animation = spring<Float>(dampingRatio = .84f, stiffness = 420f)
-    LaunchedEffect(revealed, maxOffsetPx) {
-        offset.animateTo(if (revealed) -maxOffsetPx else 0f, animation)
+    val animationsEnabled = LocalAnimationsEnabled.current
+    LaunchedEffect(revealed, maxOffsetPx, animationsEnabled) {
+        if (animationsEnabled) {
+            offset.animateTo(if (revealed) -maxOffsetPx else 0f, animation)
+        } else {
+            offset.snapTo(if (revealed) -maxOffsetPx else 0f)
+        }
     }
     val dragState = rememberDraggableState { delta ->
         scope.launch {
@@ -804,7 +1150,11 @@ private fun RevealableAlarmContainer(
                         val shouldReveal = offset.value < -maxOffsetPx * .28f
                         onRevealedChange(shouldReveal)
                         scope.launch {
-                            offset.animateTo(if (shouldReveal) -maxOffsetPx else 0f, animation)
+                            if (animationsEnabled) {
+                                offset.animateTo(if (shouldReveal) -maxOffsetPx else 0f, animation)
+                            } else {
+                                offset.snapTo(if (shouldReveal) -maxOffsetPx else 0f)
+                            }
                         }
                     },
                 )
@@ -858,6 +1208,8 @@ private fun EmptyAlarms(hasCalendarPermission: Boolean, diagnostics: SyncDiagnos
 private fun SettingsScreen(
     state: MainUiState,
     permissions: PermissionState,
+    navigationStyle: NavigationStyle,
+    onMenu: () -> Unit,
     onBack: () -> Unit,
     onLeadMinutes: (Int) -> Unit,
     onLatestEventMinutes: (Int) -> Unit,
@@ -885,6 +1237,13 @@ private fun SettingsScreen(
     onAppLanguage: (AppLanguage) -> Unit,
     onOpenLanguageSettings: () -> Unit,
     onAdvancedMode: (Boolean) -> Unit,
+    onNavigationStyle: (NavigationStyle) -> Unit,
+    onBottomBarHideSeconds: (Int) -> Unit,
+    onReduceAnimations: (Boolean) -> Unit,
+    onToggleImportantEvent: (String) -> Unit,
+    onShowImportantTab: (Boolean) -> Unit,
+    onIncludeUnselectedCalendars: (Boolean) -> Unit,
+    onShowAllEventsTab: (Boolean) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
     onCustomAccentColor: (Int) -> Unit,
@@ -906,11 +1265,21 @@ private fun SettingsScreen(
     var releasesExpanded by rememberSaveable { mutableStateOf(false) }
     var alarmEffectsExpanded by rememberSaveable { mutableStateOf(false) }
     var reminderEffectsExpanded by rememberSaveable { mutableStateOf(false) }
+    var importantTitle by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val selectedCalendars = state.calendars.filter { calendar ->
         state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds
     }
     val repairCandidates = selectedCalendars.filter { !it.syncEvents }
+    val knownEventTitles = (
+        state.alarms.map(ScheduledAlarm::title) +
+            state.diagnostics?.events.orEmpty().map(EventDiagnostic::title) +
+            state.settings.importantEventTitles
+        )
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinctBy { it.lowercase() }
+        .sortedBy { it.lowercase() }
     if (showLeadDialog) {
         LeadTimeDialog(
             initialMinutes = state.settings.leadMinutes,
@@ -947,11 +1316,7 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад")) }
-                Spacer(Modifier.width(4.dp))
-                Text(tr("Настройки"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            }
+            SectionHeader(tr("Настройки"), navigationStyle, onBack, onMenu)
         }
         item {
             SettingsCard(
@@ -977,7 +1342,48 @@ private fun SettingsScreen(
                         )
                     }
                 }
-                AnimatedVisibility(
+                HorizontalDivider()
+                Text(tr("Расположение вкладок"), fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NavigationStyle.entries.forEach { style ->
+                        FilterChip(
+                            selected = state.settings.navigationStyle == style,
+                            onClick = { onNavigationStyle(style) },
+                            label = {
+                                Text(
+                                    tr(
+                                        when (style) {
+                                            NavigationStyle.CLASSIC -> "Шестерёнка сверху"
+                                            NavigationStyle.BOTTOM_BAR -> "Матовая панель снизу"
+                                            NavigationStyle.DRAWER -> "Выдвижное меню"
+                                        },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+                MotionVisibility(visible = state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(tr("Скрывать нижнюю панель через"), fontWeight = FontWeight.Medium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0, 3, 5, 10, 15).forEach { seconds ->
+                                FilterChip(
+                                    selected = state.settings.bottomBarHideSeconds == seconds,
+                                    onClick = { onBottomBarHideSeconds(seconds) },
+                                    label = { Text(if (seconds == 0) tr("Не скрывать") else tr("%d сек", seconds)) },
+                                )
+                            }
+                        }
+                    }
+                }
+                ToggleRow(
+                    title = tr("Убрать анимации"),
+                    subtitle = tr("Меньше движения и нагрузки на батарею"),
+                    checked = state.settings.reduceAnimations,
+                    onChecked = onReduceAnimations,
+                )
+                MotionVisibility(
                     visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1049,7 +1455,7 @@ private fun SettingsScreen(
                 OutlinedButton(onClick = { showLeadDialog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(tr("Задать дни, часы и минуты"))
                 }
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1064,7 +1470,7 @@ private fun SettingsScreen(
                             checked = state.settings.latestEventEnabled,
                             onChecked = onLatestEventEnabled,
                         )
-                        AnimatedVisibility(
+                        MotionVisibility(
                             visible = state.settings.latestEventEnabled,
                             enter = fadeIn(tween(260)) + expandVertically(),
                             exit = fadeOut(tween(180)) + shrinkVertically(),
@@ -1106,7 +1512,7 @@ private fun SettingsScreen(
                     checked = state.settings.allEventsPerDay,
                     onChecked = onAllEventsPerDay,
                 )
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = state.settings.allEventsPerDay,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
@@ -1122,7 +1528,7 @@ private fun SettingsScreen(
                         onChecked = onReminderVibrationEnabled,
                     )
                 }
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1136,7 +1542,7 @@ private fun SettingsScreen(
                             checked = state.settings.includeAllDayEvents,
                             onChecked = onIncludeAllDayEvents,
                         )
-                        AnimatedVisibility(
+                        MotionVisibility(
                             visible = state.settings.includeAllDayEvents,
                             enter = fadeIn(tween(260)) + expandVertically(),
                             exit = fadeOut(tween(180)) + shrinkVertically(),
@@ -1164,7 +1570,7 @@ private fun SettingsScreen(
                     checked = state.settings.alarmSoundEnabled,
                     onChecked = onAlarmSoundEnabled,
                 )
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = state.settings.alarmSoundEnabled,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
@@ -1185,7 +1591,7 @@ private fun SettingsScreen(
                     checked = state.settings.alarmVibrationEnabled,
                     onChecked = onAlarmVibrationEnabled,
                 )
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1206,7 +1612,7 @@ private fun SettingsScreen(
                                 onQuickDismiss(state.settings.quickDismiss.copy(enabled = enabled))
                             },
                         )
-                        AnimatedVisibility(
+                        MotionVisibility(
                             visible = state.settings.quickDismiss.enabled,
                             enter = fadeIn(tween(260)) + expandVertically(),
                             exit = fadeOut(tween(180)) + shrinkVertically(),
@@ -1262,7 +1668,7 @@ private fun SettingsScreen(
             }
         }
         item {
-            AnimatedVisibility(
+            MotionVisibility(
                 visible = state.settings.advancedMode,
                 enter = fadeIn(tween(280)) + expandVertically(
                     animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1279,7 +1685,7 @@ private fun SettingsScreen(
                     onClick = { alarmEffectsExpanded = !alarmEffectsExpanded },
                     expanded = alarmEffectsExpanded,
                 )
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = alarmEffectsExpanded,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
@@ -1305,7 +1711,7 @@ private fun SettingsScreen(
                     onClick = { reminderEffectsExpanded = !reminderEffectsExpanded },
                     expanded = reminderEffectsExpanded,
                 )
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = reminderEffectsExpanded,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 390f),
@@ -1321,6 +1727,66 @@ private fun SettingsScreen(
                         onRequestCamera = onRequestCamera,
                     )
                 }
+                }
+            }
+        }
+        item {
+            SettingsCard(
+                Icons.Rounded.Star,
+                tr("Важные мероприятия"),
+                tr("Отмечено: %d", state.settings.importantEventTitles.size),
+            ) {
+                ToggleRow(
+                    title = tr("Показывать отдельную вкладку"),
+                    subtitle = tr("Быстрый доступ только к важным мероприятиям"),
+                    checked = state.settings.showImportantTab,
+                    onChecked = onShowImportantTab,
+                )
+                OutlinedTextField(
+                    value = importantTitle,
+                    onValueChange = { importantTitle = it },
+                    label = { Text(tr("Название мероприятия")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                FilledTonalButton(
+                    onClick = {
+                        onToggleImportantEvent(importantTitle)
+                        importantTitle = ""
+                    },
+                    enabled = importantTitle.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Rounded.StarBorder, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Добавить важное мероприятие"))
+                }
+                HorizontalDivider()
+                Text(tr("Найденные названия"), fontWeight = FontWeight.Medium)
+                if (knownEventTitles.isEmpty()) {
+                    Text(
+                        tr("После проверки календаря здесь появятся названия мероприятий"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    knownEventTitles.take(30).forEach { title ->
+                        val selected = state.settings.importantEventTitles.any {
+                            it.equals(title, ignoreCase = true)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { onToggleImportantEvent(title) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = selected, onCheckedChange = { onToggleImportantEvent(title) })
+                            Spacer(Modifier.width(8.dp))
+                            Text(title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 }
             }
         }
@@ -1389,6 +1855,20 @@ private fun SettingsScreen(
                     FilledTonalButton(onClick = onSelectAllCalendars, modifier = Modifier.fillMaxWidth()) {
                         Text(tr(if (state.settings.selectedCalendarIds.isEmpty()) "Все календари уже выбраны" else "Выбрать все календари"))
                     }
+                    ToggleRow(
+                        title = tr("Показывать события из невыбранных календарей"),
+                        subtitle = tr("Они будут только тихими напоминаниями без звука"),
+                        checked = state.settings.includeUnselectedCalendarsAsSilent,
+                        onChecked = onIncludeUnselectedCalendars,
+                    )
+                    MotionVisibility(visible = state.settings.includeUnselectedCalendarsAsSilent) {
+                        ToggleRow(
+                            title = tr("Показывать вкладку «Все мероприятия»"),
+                            subtitle = tr("Вкладка объединит выбранные и тихие мероприятия"),
+                            checked = state.settings.showAllEventsTab,
+                            onChecked = onShowAllEventsTab,
+                        )
+                    }
                     state.calendars.forEachIndexed { index, calendar ->
                         CalendarToggle(
                             calendar = calendar,
@@ -1402,7 +1882,7 @@ private fun SettingsScreen(
             }
         }
         item {
-            AnimatedVisibility(
+            MotionVisibility(
                 visible = state.settings.advancedMode,
                 enter = fadeIn(tween(280)) + expandVertically(
                     animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1444,7 +1924,7 @@ private fun SettingsScreen(
                     onClick = { diagnosticsExpanded = !diagnosticsExpanded },
                     expanded = diagnosticsExpanded,
                 )
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = diagnosticsExpanded,
                     enter = fadeIn(tween(300)) + expandVertically(
                         animationSpec = spring(dampingRatio = .9f, stiffness = 330f),
@@ -1648,7 +2128,7 @@ private fun SettingsScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(tr(if (state.githubConfigured) "Проверить обновления" else "Репозиторий не настроен"))
                 }
-                AnimatedVisibility(
+                MotionVisibility(
                     visible = state.settings.advancedMode,
                     enter = fadeIn(tween(260)) + expandVertically(
                         animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1666,7 +2146,7 @@ private fun SettingsScreen(
                             },
                             expanded = releasesExpanded,
                         )
-                        AnimatedVisibility(
+                        MotionVisibility(
                             visible = releasesExpanded,
                             enter = fadeIn(tween(260)) + expandVertically(
                                 animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -1786,7 +2266,7 @@ private fun ColorPickerDialog(
     val parsed = parseHexColor(hex)
     val preview by animateColorAsState(
         targetValue = Color(parsed ?: initialColor),
-        animationSpec = tween(420),
+        animationSpec = if (LocalAnimationsEnabled.current) tween(420) else snap(),
         label = "customColorPreview",
     )
     AlertDialog(
@@ -1976,7 +2456,7 @@ private fun SignalEffectsEditor(
                 if (enabled && !cameraGranted) onRequestCamera()
             },
         )
-        AnimatedVisibility(
+        MotionVisibility(
             visible = effects.torchEnabled,
             enter = fadeIn(tween(240)) + expandVertically(),
             exit = fadeOut(tween(160)) + shrinkVertically(),
@@ -2036,7 +2516,7 @@ private fun SignalEffectsEditor(
             checked = vibrationEnabled,
             onChecked = onVibrationEnabled,
         )
-        AnimatedVisibility(
+        MotionVisibility(
             visible = vibrationEnabled,
             enter = fadeIn(tween(240)) + expandVertically(),
             exit = fadeOut(tween(160)) + shrinkVertically(),
@@ -2070,11 +2550,35 @@ private fun signalEffectsSummary(effects: SignalEffects, vibrationEnabled: Boole
 }
 
 @Composable
+private fun MotionVisibility(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    enter: EnterTransition = fadeIn() + expandVertically(),
+    exit: ExitTransition = fadeOut() + shrinkVertically(),
+    content: @Composable () -> Unit,
+) {
+    if (LocalAnimationsEnabled.current) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = modifier,
+            enter = enter,
+            exit = exit,
+        ) { content() }
+    } else if (visible) {
+        Box(modifier) { content() }
+    }
+}
+
+@Composable
 private fun SettingsCard(icon: ImageVector, title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = spring(dampingRatio = .82f, stiffness = 430f),
+        animationSpec = if (LocalAnimationsEnabled.current) {
+            spring(dampingRatio = .82f, stiffness = 430f)
+        } else {
+            snap()
+        },
         label = "settingsSectionArrow",
     )
     Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -2103,7 +2607,7 @@ private fun SettingsCard(icon: ImageVector, title: String, subtitle: String, con
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
-            AnimatedVisibility(
+            MotionVisibility(
                 visible = expanded,
                 enter = fadeIn(tween(260)) + expandVertically(
                     animationSpec = spring(dampingRatio = .88f, stiffness = 360f),
@@ -2220,7 +2724,11 @@ private fun SettingsActionRow(
 ) {
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded == true) 90f else 0f,
-        animationSpec = spring(dampingRatio = .82f, stiffness = 390f),
+        animationSpec = if (LocalAnimationsEnabled.current) {
+            spring(dampingRatio = .82f, stiffness = 390f)
+        } else {
+            snap()
+        },
         label = "settingsArrow",
     )
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

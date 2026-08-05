@@ -149,6 +149,13 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(action, Uri.parse("package:$packageName")))
                     },
                     onAdvancedMode = viewModel::setAdvancedMode,
+                    onNavigationStyle = viewModel::setNavigationStyle,
+                    onBottomBarHideSeconds = viewModel::setBottomBarHideSeconds,
+                    onReduceAnimations = viewModel::setReduceAnimations,
+                    onToggleImportantEvent = viewModel::toggleImportantEventTitle,
+                    onShowImportantTab = viewModel::setShowImportantTab,
+                    onIncludeUnselectedCalendars = viewModel::setIncludeUnselectedCalendarsAsSilent,
+                    onShowAllEventsTab = viewModel::setShowAllEventsTab,
                     onSkipAlarm = viewModel::skipAlarm,
                     onRestoreAlarm = viewModel::restoreAlarm,
                     onSkipAllToday = viewModel::skipAllToday,

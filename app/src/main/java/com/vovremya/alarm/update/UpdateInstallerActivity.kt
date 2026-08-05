@@ -224,12 +224,27 @@ class UpdateInstallerActivity : ComponentActivity() {
                                         textAlign = TextAlign.Center,
                                     )
                                 }
+                                if (!isDowngrade) {
+                                    OutlinedButton(
+                                        onClick = { scheduleTonight(version) },
+                                        enabled = !installing,
+                                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    ) {
+                                        Text(tr("Установить ночью"))
+                                    }
+                                    Text(
+                                        tr("В 03:00 Android откроет системное подтверждение установки"),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                                 OutlinedButton(
                                     onClick = ::finishUpdatePrompt,
                                     enabled = !installing && downgradeState != DowngradeState.SAVING,
                                     modifier = Modifier.fillMaxWidth().height(52.dp),
                                 ) {
-                                    Text(tr("Позже"))
+                                    Text(tr("Отмена"))
                                 }
                             }
                         }
@@ -375,6 +390,21 @@ class UpdateInstallerActivity : ComponentActivity() {
                 putExtra(Intent.EXTRA_RETURN_RESULT, false)
             },
         )
+        finish()
+    }
+
+    private fun scheduleTonight(version: String) {
+        val apk = runCatching(::validatedApk).getOrElse {
+            finishUpdatePrompt()
+            return
+        }
+        val triggerAt = runCatching {
+            UpdateNightScheduler(this).schedule(version, apk, isDowngrade = false)
+        }.getOrElse {
+            finishUpdatePrompt()
+            return
+        }
+        NotificationHelper(this).showUpdateScheduled(version, triggerAt)
         finish()
     }
 

@@ -10,6 +10,7 @@ import com.vovremya.alarm.data.AccentTheme
 import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.CalendarSyncRepairResult
+import com.vovremya.alarm.data.NavigationStyle
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SignalEffects
 import com.vovremya.alarm.data.SyncDiagnostics
@@ -288,6 +289,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAdvancedMode(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setAdvancedMode(enabled) }
+    }
+
+    fun setNavigationStyle(style: NavigationStyle) {
+        viewModelScope.launch { container.settingsStore.setNavigationStyle(style) }
+    }
+
+    fun setBottomBarHideSeconds(seconds: Int) {
+        viewModelScope.launch { container.settingsStore.setBottomBarHideSeconds(seconds) }
+    }
+
+    fun setReduceAnimations(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setReduceAnimations(enabled) }
+    }
+
+    fun toggleImportantEventTitle(title: String) = updateAndSync {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) return@updateAndSync
+        val current = state.value.settings.importantEventTitles
+        val existing = current.firstOrNull { it.equals(cleanTitle, ignoreCase = true) }
+        container.settingsStore.setImportantEventTitles(
+            if (existing == null) current + cleanTitle else current - existing,
+        )
+    }
+
+    fun setShowImportantTab(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setShowImportantTab(enabled) }
+    }
+
+    fun setIncludeUnselectedCalendarsAsSilent(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setIncludeUnselectedCalendarsAsSilent(enabled)
+        if (!enabled) container.settingsStore.setShowAllEventsTab(false)
+    }
+
+    fun setShowAllEventsTab(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setShowAllEventsTab(enabled) }
     }
 
     fun skipAlarm(alarm: ScheduledAlarm) {

@@ -58,6 +58,13 @@ class SettingsStore(private val context: Context) {
         val automaticUpdates = booleanPreferencesKey("automatic_updates")
         val updateChannel = stringPreferencesKey("update_channel")
         val appLanguageTag = stringPreferencesKey("app_language_tag")
+        val navigationStyle = stringPreferencesKey("navigation_style")
+        val bottomBarHideSeconds = intPreferencesKey("bottom_bar_hide_seconds")
+        val reduceAnimations = booleanPreferencesKey("reduce_animations")
+        val importantEventTitles = stringPreferencesKey("important_event_titles")
+        val showImportantTab = booleanPreferencesKey("show_important_tab")
+        val includeUnselectedCalendarsAsSilent = booleanPreferencesKey("include_unselected_calendars_silent")
+        val showAllEventsTab = booleanPreferencesKey("show_all_events_tab")
         val skippedEventKeys = stringPreferencesKey("skipped_event_keys")
         val skippedDates = stringPreferencesKey("skipped_dates")
         val skippedAlarms = stringPreferencesKey("skipped_alarms")
@@ -177,6 +184,34 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setAppLanguageTag(value: String) = context.vovremyaDataStore.edit {
         it[Keys.appLanguageTag] = value
+    }
+
+    suspend fun setNavigationStyle(value: NavigationStyle) = context.vovremyaDataStore.edit {
+        it[Keys.navigationStyle] = value.name
+    }
+
+    suspend fun setBottomBarHideSeconds(value: Int) = context.vovremyaDataStore.edit {
+        it[Keys.bottomBarHideSeconds] = value.coerceIn(0, 30)
+    }
+
+    suspend fun setReduceAnimations(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.reduceAnimations] = enabled
+    }
+
+    suspend fun setImportantEventTitles(values: Set<String>) = context.vovremyaDataStore.edit {
+        it[Keys.importantEventTitles] = encodeStringSet(values.map(String::trim).filter(String::isNotBlank).toSet())
+    }
+
+    suspend fun setShowImportantTab(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.showImportantTab] = enabled
+    }
+
+    suspend fun setIncludeUnselectedCalendarsAsSilent(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.includeUnselectedCalendarsAsSilent] = enabled
+    }
+
+    suspend fun setShowAllEventsTab(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.showAllEventsTab] = enabled
     }
 
     suspend fun skipAlarm(alarm: ScheduledAlarm) = context.vovremyaDataStore.edit { preferences ->
@@ -340,6 +375,15 @@ class SettingsStore(private val context: Context) {
                 ?.let { stored -> UpdateChannel.entries.firstOrNull { it.name == stored } }
                 ?: UpdateChannel.STABLE,
             appLanguageTag = preferences[Keys.appLanguageTag].orEmpty(),
+            navigationStyle = preferences[Keys.navigationStyle]
+                ?.let { stored -> NavigationStyle.entries.firstOrNull { it.name == stored } }
+                ?: NavigationStyle.CLASSIC,
+            bottomBarHideSeconds = (preferences[Keys.bottomBarHideSeconds] ?: 5).coerceIn(0, 30),
+            reduceAnimations = preferences[Keys.reduceAnimations] ?: false,
+            importantEventTitles = decodeStringSet(preferences[Keys.importantEventTitles]),
+            showImportantTab = preferences[Keys.showImportantTab] ?: false,
+            includeUnselectedCalendarsAsSilent = preferences[Keys.includeUnselectedCalendarsAsSilent] ?: false,
+            showAllEventsTab = preferences[Keys.showAllEventsTab] ?: false,
             skippedEventKeys = decodeStringSet(preferences[Keys.skippedEventKeys]),
             skippedDates = decodeDates(preferences[Keys.skippedDates]),
             themeMode = preferences[Keys.themeMode]
@@ -383,6 +427,8 @@ class SettingsStore(private val context: Context) {
                 put("soundUri", alarm.soundUri)
                 put("snoozeMinutes", alarm.snoozeMinutes)
                 put("autoSilenceMinutes", alarm.autoSilenceMinutes)
+                put("important", alarm.isImportant)
+                put("unselectedCalendar", alarm.fromUnselectedCalendar)
             })
         }
     }.toString()
@@ -434,6 +480,8 @@ class SettingsStore(private val context: Context) {
                         soundUri = item.optString("soundUri"),
                         snoozeMinutes = item.optInt("snoozeMinutes", 10).coerceIn(1, 120),
                         autoSilenceMinutes = item.optInt("autoSilenceMinutes", 10).coerceIn(1, 60),
+                        isImportant = item.optBoolean("important", false),
+                        fromUnselectedCalendar = item.optBoolean("unselectedCalendar", false),
                     ),
                 )
             }

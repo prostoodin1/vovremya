@@ -23,6 +23,7 @@ import com.vovremya.alarm.localization.appLocale
 import com.vovremya.alarm.localization.tr
 import com.vovremya.alarm.ui.AlarmActivity
 import com.vovremya.alarm.update.UpdateInstallerActivity
+import com.vovremya.alarm.update.UpdateActionReceiver
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -179,7 +180,12 @@ class NotificationHelper(private val context: Context) {
         )
     }
 
-    fun showUpdate(version: String, apk: File, isDowngrade: Boolean = false) {
+    fun showUpdate(
+        version: String,
+        apk: File,
+        isDowngrade: Boolean = false,
+        scheduled: Boolean = false,
+    ) {
         if (!canNotify()) return
         val install = PendingIntent.getActivity(
             context,
@@ -187,8 +193,24 @@ class NotificationHelper(private val context: Context) {
             updatePromptIntent(version, apk, isDowngrade),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val cancel = updateActionIntent(
+            requestCode = UPDATE_CANCEL_REQUEST_CODE,
+            action = UpdateActionReceiver.ACTION_CANCEL_UPDATE,
+            version = version,
+            apk = apk,
+            isDowngrade = isDowngrade,
+        )
+        val tonight = updateActionIntent(
+            requestCode = UPDATE_TONIGHT_REQUEST_CODE,
+            action = UpdateActionReceiver.ACTION_INSTALL_TONIGHT,
+            version = version,
+            apk = apk,
+            isDowngrade = isDowngrade,
+        )
         val body = tr(
-            if (isDowngrade) {
+            if (scheduled) {
+                "Настало время обновления — Android попросит подтвердить установку"
+            } else if (isDowngrade) {
                 "Старая версия загружена; Android не установит её поверх новой"
             } else {
                 "Нажмите, чтобы подтвердить установку обновления"
@@ -206,7 +228,38 @@ class NotificationHelper(private val context: Context) {
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setFullScreenIntent(install, true)
                 .setContentIntent(install)
+                .setDeleteIntent(cancel)
                 .addAction(R.drawable.ic_notification, tr("Установить"), install)
+                .addAction(R.drawable.ic_notification, tr("Установить ночью"), tonight)
+                .addAction(R.drawable.ic_notification, tr("Отмена"), cancel)
+                .setAutoCancel(true)
+                .build(),
+        )
+    }
+
+    fun showUpdateScheduled(version: String, triggerAtMillis: Long) {
+        if (!canNotify()) return
+        val cancel = updateActionIntent(
+            requestCode = UPDATE_CANCEL_REQUEST_CODE,
+            action = UpdateActionReceiver.ACTION_CANCEL_UPDATE,
+            version = version,
+        )
+        val body = tr(
+            "Ночью в %s Android попросит подтвердить установку версии %s",
+            formatTime(triggerAtMillis),
+            version,
+        )
+        notifySafely(
+            UPDATE_NOTIFICATION_ID,
+            NotificationCompat.Builder(context, UPDATE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(tr("Обновление запланировано"))
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setDeleteIntent(cancel)
+                .addAction(R.drawable.ic_notification, tr("Отмена"), cancel)
                 .setAutoCancel(true)
                 .build(),
         )
@@ -223,6 +276,24 @@ class NotificationHelper(private val context: Context) {
             putExtra(UpdateInstallerActivity.EXTRA_IS_DOWNGRADE, isDowngrade)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+
+    private fun updateActionIntent(
+        requestCode: Int,
+        action: String,
+        version: String,
+        apk: File? = null,
+        isDowngrade: Boolean = false,
+    ): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        requestCode,
+        Intent(context, UpdateActionReceiver::class.java).apply {
+            this.action = action
+            putExtra(UpdateActionReceiver.EXTRA_VERSION, version)
+            apk?.let { putExtra(UpdateActionReceiver.EXTRA_APK_PATH, it.absolutePath) }
+            putExtra(UpdateActionReceiver.EXTRA_IS_DOWNGRADE, isDowngrade)
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     fun cancelUpdate() = manager.cancel(UPDATE_NOTIFICATION_ID)
 
@@ -280,5 +351,7 @@ class NotificationHelper(private val context: Context) {
         const val UPDATE_CHANNEL = "github_updates_full_screen_v2"
         private const val PLANNING_NOTIFICATION_ID = 1900
         private const val UPDATE_NOTIFICATION_ID = 2300
+        private const val UPDATE_CANCEL_REQUEST_CODE = 2301
+        private const val UPDATE_TONIGHT_REQUEST_CODE = 2302
     }
 }

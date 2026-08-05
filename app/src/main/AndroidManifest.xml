@@ -68,6 +68,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".update.UpdateActionReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".receivers.SystemEventReceiver"
             android:directBootAware="false"
             android:exported="true">

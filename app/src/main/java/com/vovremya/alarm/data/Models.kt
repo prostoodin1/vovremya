@@ -29,6 +29,13 @@ data class AppSettings(
     val automaticUpdates: Boolean = true,
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
     val appLanguageTag: String = "",
+    val navigationStyle: NavigationStyle = NavigationStyle.CLASSIC,
+    val bottomBarHideSeconds: Int = 5,
+    val reduceAnimations: Boolean = false,
+    val importantEventTitles: Set<String> = emptySet(),
+    val showImportantTab: Boolean = false,
+    val includeUnselectedCalendarsAsSilent: Boolean = false,
+    val showAllEventsTab: Boolean = false,
     val skippedEventKeys: Set<String> = emptySet(),
     val skippedDates: Set<LocalDate> = emptySet(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -40,6 +47,8 @@ data class AppSettings(
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 enum class UpdateChannel { STABLE, BETA }
+
+enum class NavigationStyle { CLASSIC, BOTTOM_BAR, DRAWER }
 
 enum class TorchMode { STEADY, BLINK }
 
@@ -155,6 +164,8 @@ data class ScheduledAlarm(
     val soundUri: String = "",
     val snoozeMinutes: Int = 10,
     val autoSilenceMinutes: Int = 10,
+    val isImportant: Boolean = false,
+    val fromUnselectedCalendar: Boolean = false,
 )
 
 data class SyncResult(

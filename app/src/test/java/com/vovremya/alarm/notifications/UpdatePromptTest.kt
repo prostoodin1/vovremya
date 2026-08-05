@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -40,7 +41,12 @@ class UpdatePromptTest {
         assertNotNull(notification.fullScreenIntent)
         assertEquals(UpdateInstallerActivity::class.java.name, launchIntent.component?.className)
         assertEquals("9.9.9", launchIntent.getStringExtra(UpdateInstallerActivity.EXTRA_VERSION))
-        assertEquals(1, notification.actions.size)
+        assertEquals(3, notification.actions.size)
+        val actionIntents = notification.actions.map { action ->
+            shadowOf(action.actionIntent).savedIntent.action
+        }
+        assertTrue(actionIntents.contains(com.vovremya.alarm.update.UpdateActionReceiver.ACTION_INSTALL_TONIGHT))
+        assertTrue(actionIntents.contains(com.vovremya.alarm.update.UpdateActionReceiver.ACTION_CANCEL_UPDATE))
     }
 
     @Test

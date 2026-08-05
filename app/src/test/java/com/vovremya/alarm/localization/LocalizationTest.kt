@@ -86,4 +86,25 @@ class LocalizationTest {
             ),
         )
     }
+
+    @Test
+    fun `version 1_6 strings cover every supported language`() {
+        assertEquals(16, v16Translations.size)
+        assertTrue(v16Translations.values.all { it.size == 35 })
+        assertTrue(v16Translations.values.all { catalog -> catalog.values.none(String::isBlank) })
+        val formatArgument = Regex("%[ds]")
+        v16Translations.values.forEach { catalog ->
+            catalog.forEach { (source, translated) ->
+                assertEquals(
+                    formatArgument.findAll(source).map { it.value }.toList(),
+                    formatArgument.findAll(translated).map { it.value }.toList(),
+                )
+            }
+        }
+
+        Locale.setDefault(Locale.ITALIAN)
+        assertEquals("Installalo stasera", tr("Установить ночью"))
+        Locale.setDefault(Locale.JAPANESE)
+        assertEquals("重要な出来事", tr("Важные мероприятия"))
+    }
 }

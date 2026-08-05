@@ -36,4 +36,26 @@ class SettingsStoreTest {
 
         assertEquals("it", store.settings.first().appLanguageTag)
     }
+
+    @Test
+    fun `navigation importance and calendar visibility settings are persisted`() = runBlocking {
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+
+        store.setNavigationStyle(NavigationStyle.BOTTOM_BAR)
+        store.setBottomBarHideSeconds(10)
+        store.setReduceAnimations(true)
+        store.setImportantEventTitles(setOf("  Dentist  ", ""))
+        store.setShowImportantTab(true)
+        store.setIncludeUnselectedCalendarsAsSilent(true)
+        store.setShowAllEventsTab(true)
+
+        val settings = store.settings.first()
+        assertEquals(NavigationStyle.BOTTOM_BAR, settings.navigationStyle)
+        assertEquals(10, settings.bottomBarHideSeconds)
+        assertTrue(settings.reduceAnimations)
+        assertEquals(setOf("Dentist"), settings.importantEventTitles)
+        assertTrue(settings.showImportantTab)
+        assertTrue(settings.includeUnselectedCalendarsAsSilent)
+        assertTrue(settings.showAllEventsTab)
+    }
 }

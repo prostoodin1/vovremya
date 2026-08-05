@@ -9,6 +9,7 @@ import com.vovremya.alarm.data.ScheduledAlarm
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.Locale
 
 object EventSelector {
     data class Result(
@@ -50,7 +51,9 @@ object EventSelector {
         val diagnostics = mutableListOf<EventDiagnostic>()
         val eligible = buildList {
             events.forEach { event ->
-                if (settings.selectedCalendarIds.isNotEmpty() && event.calendarId !in settings.selectedCalendarIds) {
+                val fromUnselectedCalendar = settings.selectedCalendarIds.isNotEmpty() &&
+                    event.calendarId !in settings.selectedCalendarIds
+                if (fromUnselectedCalendar && !settings.includeUnselectedCalendarsAsSilent) {
                     excludedCalendar++
                     diagnostics += event.toDiagnostic(EventDecision.CALENDAR_DISABLED)
                     return@forEach
@@ -90,7 +93,15 @@ object EventSelector {
                     return@forEach
                 }
                 val alarmAt = effectiveStartMillis - settings.leadMinutes * 60_000L
-                add(EligibleEvent(event, start.toLocalDate(), effectiveStartMillis, alarmAt))
+                add(
+                    EligibleEvent(
+                        event = event,
+                        date = start.toLocalDate(),
+                        effectiveStartMillis = effectiveStartMillis,
+                        alarmAtMillis = alarmAt,
+                        fromUnselectedCalendar = fromUnselectedCalendar,
+                    ),
+                )
             }
         }
         val selected = eligible
@@ -98,13 +109,23 @@ object EventSelector {
             .values
             .flatMap { dayEvents ->
                 val sorted = dayEvents.sortedBy(EligibleEvent::effectiveStartMillis)
-                val included = if (settings.allEventsPerDay) sorted else sorted.take(1)
-                included.mapIndexed { index, event ->
+                val selectedCalendarEvents = sorted.filterNot(EligibleEvent::fromUnselectedCalendar)
+                val includedSelected = if (settings.allEventsPerDay) {
+                    selectedCalendarEvents
+                } else {
+                    selectedCalendarEvents.take(1)
+                }
+                val selectedDeliveries = includedSelected.mapIndexed { index, event ->
                     SelectedEvent(
                         eligible = event,
                         delivery = if (index == 0) AlarmDelivery.ALARM else AlarmDelivery.SILENT_REMINDER,
                     )
                 }
+                val unselectedDeliveries = sorted
+                    .filter(EligibleEvent::fromUnselectedCalendar)
+                    .map { event -> SelectedEvent(event, AlarmDelivery.SILENT_REMINDER) }
+                (selectedDeliveries + unselectedDeliveries)
+                    .sortedBy { it.eligible.effectiveStartMillis }
             }
         val alarms = selected.filter { it.eligible.alarmAtMillis > nowMillis }.map { selection ->
             val selectedEvent = selection.eligible
@@ -133,6 +154,10 @@ object EventSelector {
                 soundUri = settings.alarmSoundUri,
                 snoozeMinutes = settings.snoozeMinutes,
                 autoSilenceMinutes = settings.autoSilenceMinutes,
+                isImportant = settings.importantEventTitles.any { title ->
+                    title.trim().lowercase(Locale.ROOT) == event.title.trim().lowercase(Locale.ROOT)
+                },
+                fromUnselectedCalendar = selectedEvent.fromUnselectedCalendar,
             )
         }.sortedBy(ScheduledAlarm::alarmAtMillis)
         val deliveryByKey = selected.associate { selection ->
@@ -172,6 +197,7 @@ object EventSelector {
         val date: java.time.LocalDate,
         val effectiveStartMillis: Long,
         val alarmAtMillis: Long,
+        val fromUnselectedCalendar: Boolean,
     )
 
     private data class SelectedEvent(
