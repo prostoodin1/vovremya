@@ -11,6 +11,12 @@ import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.CalendarSyncRepairResult
 import com.vovremya.alarm.data.NavigationStyle
+import com.vovremya.alarm.data.EventAlarmRule
+import com.vovremya.alarm.data.EventRuleScope
+import com.vovremya.alarm.data.AlarmDelivery
+import com.vovremya.alarm.data.LauncherIcon
+import com.vovremya.alarm.data.SwipeAction
+import com.vovremya.alarm.data.SwipeDirection
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SignalEffects
 import com.vovremya.alarm.data.SyncDiagnostics
@@ -25,6 +31,7 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -324,6 +331,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShowAllEventsTab(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setShowAllEventsTab(enabled) }
+    }
+
+    fun saveEventAlarmRule(
+        alarm: ScheduledAlarm,
+        scope: EventRuleScope,
+        leadMinutes: Int,
+        delivery: AlarmDelivery,
+        soundEnabled: Boolean,
+        vibrationEnabled: Boolean,
+        effects: SignalEffects,
+    ) = updateAndSync {
+        container.settingsStore.setEventAlarmRule(
+            EventAlarmRule(
+                match = if (scope == EventRuleScope.THIS_EVENT) alarm.key else alarm.title.trim().lowercase(Locale.ROOT),
+                title = alarm.title,
+                scope = scope,
+                leadMinutes = leadMinutes,
+                delivery = delivery,
+                soundEnabled = soundEnabled,
+                vibrationEnabled = vibrationEnabled,
+                effects = effects,
+            ),
+        )
+        message.value = tr("Настройки события сохранены")
+    }
+
+    fun removeEventAlarmRule(alarm: ScheduledAlarm, scope: EventRuleScope) = updateAndSync {
+        val match = if (scope == EventRuleScope.THIS_EVENT) alarm.key else alarm.title.trim().lowercase(Locale.ROOT)
+        container.settingsStore.removeEventAlarmRule(scope, match)
+        message.value = tr("Индивидуальные настройки удалены")
+    }
+
+    fun muteAlarm(alarm: ScheduledAlarm) = saveEventAlarmRule(
+        alarm = alarm,
+        scope = EventRuleScope.THIS_EVENT,
+        leadMinutes = ((alarm.eventStartMillis - alarm.alarmAtMillis) / 60_000L).toInt().coerceAtLeast(0),
+        delivery = AlarmDelivery.SILENT_REMINDER,
+        soundEnabled = false,
+        vibrationEnabled = state.value.settings.reminderVibrationEnabled,
+        effects = state.value.settings.reminderEffects,
+    )
+
+    fun setCalendarLeadMinutes(calendarId: Long, minutes: Int?) = updateAndSync {
+        container.settingsStore.setCalendarLeadMinutes(calendarId, minutes)
+    }
+
+    fun setDefaultEventRuleScope(scope: EventRuleScope) {
+        viewModelScope.launch { container.settingsStore.setDefaultEventRuleScope(scope) }
+    }
+
+    fun setFullSwipeEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setFullSwipeEnabled(enabled) }
+    }
+
+    fun setSwipeDirection(direction: SwipeDirection) {
+        viewModelScope.launch { container.settingsStore.setSwipeDirection(direction) }
+    }
+
+    fun setLeftSwipeAction(action: SwipeAction) {
+        viewModelScope.launch { container.settingsStore.setLeftSwipeAction(action) }
+    }
+
+    fun setRightSwipeAction(action: SwipeAction) {
+        viewModelScope.launch { container.settingsStore.setRightSwipeAction(action) }
+    }
+
+    fun setLauncherIcon(icon: LauncherIcon) {
+        viewModelScope.launch {
+            container.settingsStore.setLauncherIcon(icon)
+            container.launcherIconManager.apply(icon)
+        }
     }
 
     fun skipAlarm(alarm: ScheduledAlarm) {

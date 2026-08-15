@@ -36,6 +36,14 @@ data class AppSettings(
     val showImportantTab: Boolean = false,
     val includeUnselectedCalendarsAsSilent: Boolean = false,
     val showAllEventsTab: Boolean = false,
+    val eventAlarmRules: List<EventAlarmRule> = emptyList(),
+    val calendarLeadMinutes: Map<Long, Int> = emptyMap(),
+    val defaultEventRuleScope: EventRuleScope = EventRuleScope.SAME_TITLE,
+    val fullSwipeEnabled: Boolean = false,
+    val swipeDirection: SwipeDirection = SwipeDirection.BOTH,
+    val leftSwipeAction: SwipeAction = SwipeAction.SILENT,
+    val rightSwipeAction: SwipeAction = SwipeAction.SKIP,
+    val launcherIcon: LauncherIcon = LauncherIcon.CLASSIC,
     val skippedEventKeys: Set<String> = emptySet(),
     val skippedDates: Set<LocalDate> = emptySet(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -49,6 +57,25 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class UpdateChannel { STABLE, BETA }
 
 enum class NavigationStyle { CLASSIC, BOTTOM_BAR, DRAWER }
+
+enum class EventRuleScope { THIS_EVENT, SAME_TITLE }
+
+enum class SwipeDirection { LEFT, RIGHT, BOTH }
+
+enum class SwipeAction { REVEAL, SILENT, SKIP }
+
+enum class LauncherIcon {
+    CLASSIC,
+    ORBIT,
+    CHECK,
+    BELL,
+    CALENDAR,
+    SUNRISE,
+    STAR,
+    MINIMAL,
+    RING,
+    HOURGLASS,
+}
 
 enum class TorchMode { STEADY, BLINK }
 
@@ -67,6 +94,17 @@ data class QuickDismissSettings(
     val enabled: Boolean = true,
     val afterMinutes: Int = 10 * 60,
     val mode: QuickDismissMode = QuickDismissMode.BUTTON,
+)
+
+data class EventAlarmRule(
+    val match: String,
+    val title: String,
+    val scope: EventRuleScope,
+    val leadMinutes: Int,
+    val delivery: AlarmDelivery,
+    val soundEnabled: Boolean,
+    val vibrationEnabled: Boolean,
+    val effects: SignalEffects,
 )
 
 enum class AccentTheme {
@@ -166,6 +204,7 @@ data class ScheduledAlarm(
     val autoSilenceMinutes: Int = 10,
     val isImportant: Boolean = false,
     val fromUnselectedCalendar: Boolean = false,
+    val customRuleApplied: Boolean = false,
 )
 
 data class SyncResult(

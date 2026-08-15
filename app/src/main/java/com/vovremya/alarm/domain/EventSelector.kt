@@ -5,6 +5,8 @@ import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
+import com.vovremya.alarm.data.EventAlarmRule
+import com.vovremya.alarm.data.EventRuleScope
 import com.vovremya.alarm.data.ScheduledAlarm
 import java.time.Instant
 import java.time.ZoneId
@@ -92,7 +94,15 @@ object EventSelector {
                     diagnostics += event.toDiagnostic(EventDecision.USER_SKIPPED)
                     return@forEach
                 }
-                val alarmAt = effectiveStartMillis - settings.leadMinutes * 60_000L
+                val normalizedTitle = event.title.trim().lowercase(Locale.ROOT)
+                val eventRule = settings.eventAlarmRules.firstOrNull { rule ->
+                    rule.scope == EventRuleScope.THIS_EVENT && rule.match == eventKey
+                } ?: settings.eventAlarmRules.firstOrNull { rule ->
+                    rule.scope == EventRuleScope.SAME_TITLE && rule.match == normalizedTitle
+                }
+                val calendarLead = settings.calendarLeadMinutes[event.calendarId]
+                val leadMinutes = eventRule?.leadMinutes ?: calendarLead ?: settings.leadMinutes
+                val alarmAt = effectiveStartMillis - leadMinutes * 60_000L
                 add(
                     EligibleEvent(
                         event = event,
@@ -100,6 +110,8 @@ object EventSelector {
                         effectiveStartMillis = effectiveStartMillis,
                         alarmAtMillis = alarmAt,
                         fromUnselectedCalendar = fromUnselectedCalendar,
+                        eventRule = eventRule,
+                        calendarRuleApplied = calendarLead != null,
                     ),
                 )
             }
@@ -118,7 +130,8 @@ object EventSelector {
                 val selectedDeliveries = includedSelected.mapIndexed { index, event ->
                     SelectedEvent(
                         eligible = event,
-                        delivery = if (index == 0) AlarmDelivery.ALARM else AlarmDelivery.SILENT_REMINDER,
+                        delivery = event.eventRule?.delivery
+                            ?: if (index == 0) AlarmDelivery.ALARM else AlarmDelivery.SILENT_REMINDER,
                     )
                 }
                 val unselectedDeliveries = sorted
@@ -131,6 +144,7 @@ object EventSelector {
             val selectedEvent = selection.eligible
             val event = selectedEvent.event
             val isAlarm = selection.delivery == AlarmDelivery.ALARM
+            val rule = selectedEvent.eventRule
             ScheduledAlarm(
                 key = "${event.eventId}:${event.instanceStartMillis}",
                 eventId = event.eventId,
@@ -143,13 +157,13 @@ object EventSelector {
                 calendarColor = event.calendarColor,
                 allDay = event.allDay,
                 delivery = selection.delivery,
-                soundEnabled = isAlarm && settings.alarmSoundEnabled,
-                vibrationEnabled = if (isAlarm) {
+                soundEnabled = isAlarm && (rule?.soundEnabled ?: settings.alarmSoundEnabled),
+                vibrationEnabled = rule?.vibrationEnabled ?: if (isAlarm) {
                     settings.alarmVibrationEnabled
                 } else {
                     settings.reminderVibrationEnabled
                 },
-                effects = if (isAlarm) settings.alarmEffects else settings.reminderEffects,
+                effects = rule?.effects ?: if (isAlarm) settings.alarmEffects else settings.reminderEffects,
                 quickDismiss = settings.quickDismiss,
                 soundUri = settings.alarmSoundUri,
                 snoozeMinutes = settings.snoozeMinutes,
@@ -158,6 +172,7 @@ object EventSelector {
                     title.trim().lowercase(Locale.ROOT) == event.title.trim().lowercase(Locale.ROOT)
                 },
                 fromUnselectedCalendar = selectedEvent.fromUnselectedCalendar,
+                customRuleApplied = rule != null || selectedEvent.calendarRuleApplied,
             )
         }.sortedBy(ScheduledAlarm::alarmAtMillis)
         val deliveryByKey = selected.associate { selection ->
@@ -198,6 +213,8 @@ object EventSelector {
         val effectiveStartMillis: Long,
         val alarmAtMillis: Long,
         val fromUnselectedCalendar: Boolean,
+        val eventRule: EventAlarmRule?,
+        val calendarRuleApplied: Boolean,
     )
 
     private data class SelectedEvent(

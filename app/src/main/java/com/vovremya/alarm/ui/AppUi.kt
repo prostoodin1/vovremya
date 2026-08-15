@@ -32,11 +32,14 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
@@ -49,6 +52,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -60,6 +64,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -79,6 +84,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
@@ -95,13 +101,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -115,10 +120,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -131,6 +138,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -141,15 +149,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vovremya.alarm.BuildConfig
 import com.vovremya.alarm.data.AlarmDelivery
+import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.CalendarInfo
 import com.vovremya.alarm.data.AccentTheme
 import com.vovremya.alarm.data.BackgroundStyle
 import com.vovremya.alarm.data.EventDecision
 import com.vovremya.alarm.data.EventDiagnostic
 import com.vovremya.alarm.data.EventSource
+import com.vovremya.alarm.data.EventAlarmRule
+import com.vovremya.alarm.data.EventRuleScope
+import com.vovremya.alarm.data.LauncherIcon
 import com.vovremya.alarm.data.NavigationStyle
 import com.vovremya.alarm.data.ScheduledAlarm
 import com.vovremya.alarm.data.SignalEffects
+import com.vovremya.alarm.data.SwipeAction
+import com.vovremya.alarm.data.SwipeDirection
 import com.vovremya.alarm.data.SyncDiagnostics
 import com.vovremya.alarm.data.ThemeMode
 import com.vovremya.alarm.data.TorchMode
@@ -170,7 +184,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
+import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -186,6 +202,8 @@ data class PermissionState(
 }
 
 private enum class Screen { Home, Important, AllEvents, Settings }
+
+private const val SCREEN_STATE_TTL_MILLIS = 60_000L
 
 private val LocalAnimationsEnabled = staticCompositionLocalOf { true }
 
@@ -255,6 +273,16 @@ fun MainApp(
     onShowImportantTab: (Boolean) -> Unit,
     onIncludeUnselectedCalendars: (Boolean) -> Unit,
     onShowAllEventsTab: (Boolean) -> Unit,
+    onCalendarLeadMinutes: (Long, Int?) -> Unit,
+    onDefaultEventRuleScope: (EventRuleScope) -> Unit,
+    onFullSwipeEnabled: (Boolean) -> Unit,
+    onSwipeDirection: (SwipeDirection) -> Unit,
+    onLeftSwipeAction: (SwipeAction) -> Unit,
+    onRightSwipeAction: (SwipeAction) -> Unit,
+    onLauncherIcon: (LauncherIcon) -> Unit,
+    onSaveEventRule: (ScheduledAlarm, EventRuleScope, Int, AlarmDelivery, Boolean, Boolean, SignalEffects) -> Unit,
+    onRemoveEventRule: (ScheduledAlarm, EventRuleScope) -> Unit,
+    onMuteAlarm: (ScheduledAlarm) -> Unit,
     onSkipAlarm: (ScheduledAlarm) -> Unit,
     onRestoreAlarm: (ScheduledAlarm) -> Unit,
     onSkipAllToday: () -> Unit,
@@ -276,9 +304,20 @@ fun MainApp(
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val destinations = visibleScreens(state)
-    BackHandler(screen != Screen.Home) { screen = Screen.Home }
+    val screenStates = rememberSaveableStateHolder()
+    val lastVisited = remember { mutableStateMapOf<Screen, Long>() }
+    val selectScreen: (Screen) -> Unit = { target ->
+        val now = System.currentTimeMillis()
+        if (now - (lastVisited[target] ?: now) > SCREEN_STATE_TTL_MILLIS) {
+            screenStates.removeState(target.name)
+        }
+        lastVisited[screen] = now
+        lastVisited[target] = now
+        screen = target
+    }
+    BackHandler(screen != Screen.Home) { selectScreen(Screen.Home) }
     LaunchedEffect(destinations, screen) {
-        if (screen !in destinations) screen = Screen.Home
+        if (screen !in destinations) selectScreen(Screen.Home)
     }
     LaunchedEffect(
         state.settings.navigationStyle,
@@ -302,15 +341,16 @@ fun MainApp(
     }
     val openDrawer = { scope.launch { drawerState.open() }; Unit }
     val renderScreen: @Composable (Screen) -> Unit = { target ->
+        screenStates.SaveableStateProvider(target.name) {
             when (target) {
                 Screen.Home -> HomeScreen(
                     state = state,
                     permissions = permissions,
                     navigationStyle = state.settings.navigationStyle,
                     onMenu = openDrawer,
-                    onSettings = { screen = Screen.Settings },
-                    onImportant = { screen = Screen.Important },
-                    onAllEvents = { screen = Screen.AllEvents },
+                    onSettings = { selectScreen(Screen.Settings) },
+                    onImportant = { selectScreen(Screen.Important) },
+                    onAllEvents = { selectScreen(Screen.AllEvents) },
                     onRequestCalendar = onRequestCalendar,
                     onRequestNotifications = onRequestNotifications,
                     onRequestExactAlarms = onRequestExactAlarms,
@@ -320,31 +360,42 @@ fun MainApp(
                     onRestoreAlarm = onRestoreAlarm,
                     onSkipAllToday = onSkipAllToday,
                     onRestoreAllToday = onRestoreAllToday,
+                    onSaveEventRule = onSaveEventRule,
+                    onRemoveEventRule = onRemoveEventRule,
+                    onMuteAlarm = onMuteAlarm,
                 )
                 Screen.Important -> EventListScreen(
                     title = tr("Важные мероприятия"),
                     emptyText = tr("Важных мероприятий пока нет"),
                     alarms = state.alarms.filter(ScheduledAlarm::isImportant),
                     navigationStyle = state.settings.navigationStyle,
-                    onBack = { screen = Screen.Home },
+                    onBack = { selectScreen(Screen.Home) },
                     onMenu = openDrawer,
                     onSkipAlarm = onSkipAlarm,
+                    settings = state.settings,
+                    onSaveEventRule = onSaveEventRule,
+                    onRemoveEventRule = onRemoveEventRule,
+                    onMuteAlarm = onMuteAlarm,
                 )
                 Screen.AllEvents -> EventListScreen(
                     title = tr("Все мероприятия"),
                     emptyText = tr("Мероприятий пока нет"),
                     alarms = state.alarms,
                     navigationStyle = state.settings.navigationStyle,
-                    onBack = { screen = Screen.Home },
+                    onBack = { selectScreen(Screen.Home) },
                     onMenu = openDrawer,
                     onSkipAlarm = onSkipAlarm,
+                    settings = state.settings,
+                    onSaveEventRule = onSaveEventRule,
+                    onRemoveEventRule = onRemoveEventRule,
+                    onMuteAlarm = onMuteAlarm,
                 )
                 Screen.Settings -> SettingsScreen(
                     state = state,
                     permissions = permissions,
                     navigationStyle = state.settings.navigationStyle,
                     onMenu = openDrawer,
-                    onBack = { screen = Screen.Home },
+                    onBack = { selectScreen(Screen.Home) },
                     onLeadMinutes = onLeadMinutes,
                     onLatestEventMinutes = onLatestEventMinutes,
                     onLatestEventEnabled = onLatestEventEnabled,
@@ -378,6 +429,13 @@ fun MainApp(
                     onShowImportantTab = onShowImportantTab,
                     onIncludeUnselectedCalendars = onIncludeUnselectedCalendars,
                     onShowAllEventsTab = onShowAllEventsTab,
+                    onCalendarLeadMinutes = onCalendarLeadMinutes,
+                    onDefaultEventRuleScope = onDefaultEventRuleScope,
+                    onFullSwipeEnabled = onFullSwipeEnabled,
+                    onSwipeDirection = onSwipeDirection,
+                    onLeftSwipeAction = onLeftSwipeAction,
+                    onRightSwipeAction = onRightSwipeAction,
+                    onLauncherIcon = onLauncherIcon,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
                     onCustomAccentColor = onCustomAccentColor,
@@ -393,14 +451,14 @@ fun MainApp(
                     onRequestFullScreen = onRequestFullScreen,
                 )
             }
+        }
     }
     val scaffoldContent: @Composable () -> Unit = {
         val interactionModifier = if (state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) {
             Modifier.pointerInput(state.settings.navigationStyle) {
                 awaitPointerEventScope {
                     while (true) {
-                        awaitPointerEvent()
-                        interactionTick++
+                        if (awaitPointerEvent().type == PointerEventType.Press) interactionTick++
                     }
                 }
             }
@@ -411,12 +469,7 @@ fun MainApp(
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 snackbarHost = {
-                    SnackbarHost(
-                        hostState = snackbar,
-                        modifier = Modifier.padding(
-                            bottom = if (state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) 112.dp else 0.dp,
-                        ),
-                    )
+                    SnackbarHost(hostState = snackbar)
                 },
                 containerColor = MaterialTheme.colorScheme.background,
                 contentWindowInsets = WindowInsets.safeDrawing,
@@ -424,9 +477,6 @@ fun MainApp(
                 val contentModifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(
-                        bottom = if (state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR) 112.dp else 0.dp,
-                    )
                 if (state.settings.reduceAnimations) {
                     Box(contentModifier) { renderScreen(screen) }
                 } else {
@@ -448,28 +498,39 @@ fun MainApp(
             }
             MotionVisibility(
                 visible = state.settings.navigationStyle == NavigationStyle.BOTTOM_BAR && bottomBarVisible,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                enter = fadeIn(tween(220)) + expandVertically(expandFrom = Alignment.Bottom),
-                exit = fadeOut(tween(160)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 10.dp),
+                enter = fadeIn(tween(260)) + scaleIn(tween(300), initialScale = .82f),
+                exit = fadeOut(tween(220)) + scaleOut(tween(240), targetScale = .82f),
             ) {
                 Surface(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .94f),
-                    shadowElevation = 10.dp,
-                    tonalElevation = 8.dp,
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = .9f),
+                    shadowElevation = 14.dp,
+                    tonalElevation = 10.dp,
                 ) {
-                    NavigationBar(containerColor = Color.Transparent) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         destinations.forEach { destination ->
-                            NavigationBarItem(
-                                selected = screen == destination,
-                                onClick = {
-                                    screen = destination
+                            val selected = screen == destination
+                            Surface(
+                                shape = CircleShape,
+                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                modifier = Modifier.size(50.dp).clickable {
+                                    selectScreen(destination)
                                     interactionTick++
                                 },
-                                icon = { Icon(screenIcon(destination), screenLabel(destination)) },
-                                label = { Text(screenLabel(destination), maxLines = 1) },
-                            )
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        screenIcon(destination),
+                                        screenLabel(destination),
+                                        tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -494,7 +555,7 @@ fun MainApp(
                                 selected = screen == destination,
                                 icon = { Icon(screenIcon(destination), null) },
                                 onClick = {
-                                    screen = destination
+                                    selectScreen(destination)
                                     scope.launch { drawerState.close() }
                                 },
                                 modifier = Modifier.padding(horizontal = 12.dp),
@@ -527,8 +588,12 @@ private fun HomeScreen(
     onRestoreAlarm: (ScheduledAlarm) -> Unit,
     onSkipAllToday: () -> Unit,
     onRestoreAllToday: () -> Unit,
+    onSaveEventRule: (ScheduledAlarm, EventRuleScope, Int, AlarmDelivery, Boolean, Boolean, SignalEffects) -> Unit,
+    onRemoveEventRule: (ScheduledAlarm, EventRuleScope) -> Unit,
+    onMuteAlarm: (ScheduledAlarm) -> Unit,
 ) {
     var revealedAlarm by rememberSaveable { mutableStateOf<String?>(null) }
+    var configuringAlarm by remember { mutableStateOf<ScheduledAlarm?>(null) }
     val today = LocalDate.now()
     val todayAlarms = state.alarms.filter { it.eventDate() == today }
     val todaySkipped = state.skippedAlarms.filter { it.eventDate() == today }
@@ -576,6 +641,9 @@ private fun HomeScreen(
                     revealedAlarm = if (open && next != null) "next:${next.key}" else null
                 },
                 onSkip = { next?.let(onSkipAlarm) },
+                settings = state.settings,
+                onConfigure = { next?.let { configuringAlarm = it } },
+                onMute = { next?.let(onMuteAlarm) },
             )
         }
         item {
@@ -633,6 +701,9 @@ private fun HomeScreen(
                     },
                     onSkip = { onSkipAlarm(alarm) },
                     onRestore = {},
+                    settings = state.settings,
+                    onConfigure = { configuringAlarm = alarm },
+                    onMute = { onMuteAlarm(alarm) },
                     modifier = if (LocalAnimationsEnabled.current) {
                         Modifier.animateItem(
                             fadeInSpec = tween(360),
@@ -664,6 +735,9 @@ private fun HomeScreen(
                     },
                     onSkip = {},
                     onRestore = { onRestoreAlarm(alarm) },
+                    settings = state.settings,
+                    onConfigure = { configuringAlarm = alarm },
+                    onMute = {},
                     modifier = if (LocalAnimationsEnabled.current) {
                         Modifier.animateItem(
                             fadeInSpec = tween(360),
@@ -688,6 +762,21 @@ private fun HomeScreen(
             )
         }
     }
+    configuringAlarm?.let { alarm ->
+        EventAlarmSettingsDialog(
+            alarm = alarm,
+            settings = state.settings,
+            onDismiss = { configuringAlarm = null },
+            onSave = { scope, lead, delivery, sound, vibration, effects ->
+                onSaveEventRule(alarm, scope, lead, delivery, sound, vibration, effects)
+                configuringAlarm = null
+            },
+            onReset = { scope ->
+                onRemoveEventRule(alarm, scope)
+                configuringAlarm = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -699,8 +788,13 @@ private fun EventListScreen(
     onBack: () -> Unit,
     onMenu: () -> Unit,
     onSkipAlarm: (ScheduledAlarm) -> Unit,
+    settings: AppSettings,
+    onSaveEventRule: (ScheduledAlarm, EventRuleScope, Int, AlarmDelivery, Boolean, Boolean, SignalEffects) -> Unit,
+    onRemoveEventRule: (ScheduledAlarm, EventRuleScope) -> Unit,
+    onMuteAlarm: (ScheduledAlarm) -> Unit,
 ) {
     var revealedAlarm by rememberSaveable { mutableStateOf<String?>(null) }
+    var configuringAlarm by remember { mutableStateOf<ScheduledAlarm?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
@@ -729,9 +823,27 @@ private fun EventListScreen(
                     onRevealedChange = { open -> revealedAlarm = if (open) alarm.key else null },
                     onSkip = { onSkipAlarm(alarm) },
                     onRestore = {},
+                    settings = settings,
+                    onConfigure = { configuringAlarm = alarm },
+                    onMute = { onMuteAlarm(alarm) },
                 )
             }
         }
+    }
+    configuringAlarm?.let { alarm ->
+        EventAlarmSettingsDialog(
+            alarm = alarm,
+            settings = settings,
+            onDismiss = { configuringAlarm = null },
+            onSave = { scope, lead, delivery, sound, vibration, effects ->
+                onSaveEventRule(alarm, scope, lead, delivery, sound, vibration, effects)
+                configuringAlarm = null
+            },
+            onReset = { scope ->
+                onRemoveEventRule(alarm, scope)
+                configuringAlarm = null
+            },
+        )
     }
 }
 
@@ -867,6 +979,9 @@ private fun NextAlarmCard(
     revealed: Boolean,
     onRevealedChange: (Boolean) -> Unit,
     onSkip: () -> Unit,
+    settings: AppSettings,
+    onConfigure: () -> Unit,
+    onMute: () -> Unit,
 ) {
     if (alarm == null) {
         NextAlarmCardSurface(alarm = null, modifier = Modifier.fillMaxWidth())
@@ -879,6 +994,9 @@ private fun NextAlarmCard(
         onRevealedChange = onRevealedChange,
         onSkip = onSkip,
         onRestore = {},
+        settings = settings,
+        onConfigure = onConfigure,
+        onMute = onMute,
         shape = RoundedCornerShape(30.dp),
     ) { foreground ->
         NextAlarmCardSurface(alarm = alarm, modifier = foreground)
@@ -964,6 +1082,9 @@ private fun AlarmRow(
     onRevealedChange: (Boolean) -> Unit,
     onSkip: () -> Unit,
     onRestore: () -> Unit,
+    settings: AppSettings,
+    onConfigure: () -> Unit,
+    onMute: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     RevealableAlarmContainer(
@@ -973,6 +1094,9 @@ private fun AlarmRow(
         onRevealedChange = onRevealedChange,
         onSkip = onSkip,
         onRestore = onRestore,
+        settings = settings,
+        onConfigure = onConfigure,
+        onMute = onMute,
         modifier = modifier,
         shape = RoundedCornerShape(22.dp),
     ) { foreground ->
@@ -1000,7 +1124,7 @@ private fun AlarmRow(
                                 alarm.title,
                                 modifier = Modifier.weight(1f),
                                 fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             if (alarm.isImportant) {
@@ -1016,7 +1140,7 @@ private fun AlarmRow(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(7.dp).background(Color(alarm.calendarColor), CircleShape))
                             Spacer(Modifier.width(6.dp))
-                            Text(tr("%s · событие %s", alarm.calendarName, formatTime(alarm.eventStartMillis)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(tr("%s · событие %s", alarm.calendarName, formatTime(alarm.eventStartMillis)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     if (!alarm.location.isNullOrBlank()) Icon(Icons.Rounded.LocationOn, null, tint = MaterialTheme.colorScheme.outline)
@@ -1047,6 +1171,14 @@ private fun AlarmRow(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                        if (alarm.customRuleApplied) {
+                            Text(
+                                tr("Индивидуальное время · %s заранее", formatLead(((alarm.eventStartMillis - alarm.alarmAtMillis) / 60_000L).toInt())),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                maxLines = 2,
+                            )
+                        }
                     }
                 }
                 if (cancelled) {
@@ -1077,65 +1209,72 @@ private fun RevealableAlarmContainer(
     onRevealedChange: (Boolean) -> Unit,
     onSkip: () -> Unit,
     onRestore: () -> Unit,
+    settings: AppSettings,
+    onConfigure: () -> Unit,
+    onMute: () -> Unit,
     shape: RoundedCornerShape,
     modifier: Modifier = Modifier,
     content: @Composable (Modifier) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val maxOffsetPx = with(density) { 180.dp.toPx() }
+    val actionOffsetPx = with(density) { 270.dp.toPx() }
     val offset = remember(itemKey) { Animatable(0f) }
     val animation = spring<Float>(dampingRatio = .84f, stiffness = 420f)
     val animationsEnabled = LocalAnimationsEnabled.current
-    LaunchedEffect(revealed, maxOffsetPx, animationsEnabled) {
+    LaunchedEffect(revealed, actionOffsetPx, animationsEnabled) {
         if (animationsEnabled) {
-            offset.animateTo(if (revealed) -maxOffsetPx else 0f, animation)
+            offset.animateTo(if (revealed) -actionOffsetPx else 0f, animation)
         } else {
-            offset.snapTo(if (revealed) -maxOffsetPx else 0f)
+            offset.snapTo(if (revealed) -actionOffsetPx else 0f)
         }
     }
-    val dragState = rememberDraggableState { delta ->
-        scope.launch {
-            offset.snapTo((offset.value + delta).coerceIn(-maxOffsetPx, 0f))
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().clip(shape)) {
+        val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(actionOffsetPx)
+        val allowLeft = settings.swipeDirection != SwipeDirection.RIGHT
+        val allowRight = settings.swipeDirection != SwipeDirection.LEFT
+        val dragState = rememberDraggableState { delta ->
+            scope.launch {
+                val minimum = if (allowLeft) -widthPx else 0f
+                val maximum = if (allowRight && settings.fullSwipeEnabled) widthPx else 0f
+                offset.snapTo((offset.value + delta).coerceIn(minimum, maximum))
+            }
         }
-    }
-    Box(modifier = modifier.fillMaxWidth().clip(shape)) {
-        Row(
-            modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant).padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (cancelled) {
-                AlarmActionButton(
-                    label = tr("Вернуть"),
-                    icon = Icons.Rounded.Refresh,
-                    color = Mint,
-                    onClick = {
+        Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
+            Row(
+                modifier = Modifier.matchParentSize().padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (cancelled) {
+                    AlarmActionButton(tr("Вернуть"), Icons.Rounded.Refresh, Mint) {
                         onRevealedChange(false)
                         onRestore()
-                    },
-                )
-                AlarmActionButton(
-                    label = tr("Закрыть"),
-                    icon = Icons.Rounded.ChevronRight,
-                    color = MaterialTheme.colorScheme.primary,
-                    onClick = { onRevealedChange(false) },
-                )
-            } else {
-                AlarmActionButton(
-                    label = tr("Пропустить"),
-                    icon = Icons.Rounded.SkipNext,
-                    color = MaterialTheme.colorScheme.error,
-                    onClick = {
+                    }
+                } else {
+                    AlarmActionButton(tr("Пропустить"), Icons.Rounded.SkipNext, MaterialTheme.colorScheme.error) {
                         onRevealedChange(false)
                         onSkip()
-                    },
+                    }
+                }
+                AlarmActionButton(tr("Настроить"), Icons.Rounded.Tune, MaterialTheme.colorScheme.primary) {
+                    onRevealedChange(false)
+                    onConfigure()
+                }
+                AlarmActionButton(tr("Закрыть"), Icons.Rounded.ChevronRight, Mint) {
+                    onRevealedChange(false)
+                }
+            }
+            if (settings.fullSwipeEnabled && offset.value > 0f) {
+                SwipeActionHint(
+                    action = settings.rightSwipeAction,
+                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 22.dp),
                 )
-                AlarmActionButton(
-                    label = tr("Вернуть"),
-                    icon = Icons.Rounded.Refresh,
-                    color = Mint,
-                    onClick = { onRevealedChange(false) },
+            }
+            if (settings.fullSwipeEnabled && offset.value < -actionOffsetPx) {
+                SwipeActionHint(
+                    action = settings.leftSwipeAction,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 22.dp),
                 )
             }
         }
@@ -1147,19 +1286,48 @@ private fun RevealableAlarmContainer(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStopped = {
-                        val shouldReveal = offset.value < -maxOffsetPx * .28f
-                        onRevealedChange(shouldReveal)
                         scope.launch {
-                            if (animationsEnabled) {
-                                offset.animateTo(if (shouldReveal) -maxOffsetPx else 0f, animation)
+                            val directionAllowed = if (offset.value < 0) allowLeft else allowRight
+                            val fullSwipe = settings.fullSwipeEnabled && directionAllowed && abs(offset.value) >= widthPx * .62f
+                            if (fullSwipe) {
+                                val action = if (offset.value < 0) settings.leftSwipeAction else settings.rightSwipeAction
+                                if (animationsEnabled) offset.animateTo(if (offset.value < 0) -widthPx else widthPx, tween(160))
+                                when (action) {
+                                    SwipeAction.REVEAL -> onRevealedChange(true)
+                                    SwipeAction.SILENT -> if (!cancelled) onMute()
+                                    SwipeAction.SKIP -> if (!cancelled) onSkip() else onRestore()
+                                }
+                                if (action == SwipeAction.REVEAL) {
+                                    offset.snapTo(-actionOffsetPx)
+                                } else {
+                                    offset.snapTo(0f)
+                                    onRevealedChange(false)
+                                }
                             } else {
-                                offset.snapTo(if (shouldReveal) -maxOffsetPx else 0f)
+                                val shouldReveal = offset.value < -actionOffsetPx * .28f
+                                onRevealedChange(shouldReveal)
+                                if (animationsEnabled) offset.animateTo(if (shouldReveal) -actionOffsetPx else 0f, animation)
+                                else offset.snapTo(if (shouldReveal) -actionOffsetPx else 0f)
                             }
                         }
                     },
                 )
                 .clickable { onRevealedChange(!revealed) },
         )
+    }
+}
+
+@Composable
+private fun SwipeActionHint(action: SwipeAction, modifier: Modifier = Modifier) {
+    val icon = when (action) {
+        SwipeAction.REVEAL -> Icons.Rounded.Tune
+        SwipeAction.SILENT -> Icons.AutoMirrored.Rounded.VolumeOff
+        SwipeAction.SKIP -> Icons.Rounded.SkipNext
+    }
+    val color = if (action == SwipeAction.SKIP) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, tint = color)
+        Text(swipeActionName(action), style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1185,6 +1353,154 @@ private fun AlarmActionButton(
             Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
         }
     }
+}
+
+@Composable
+private fun EventAlarmSettingsDialog(
+    alarm: ScheduledAlarm,
+    settings: AppSettings,
+    onDismiss: () -> Unit,
+    onSave: (EventRuleScope, Int, AlarmDelivery, Boolean, Boolean, SignalEffects) -> Unit,
+    onReset: (EventRuleScope) -> Unit,
+) {
+    var scope by remember(alarm.key) { mutableStateOf(settings.defaultEventRuleScope) }
+    var leadText by remember(alarm.key) { mutableStateOf("") }
+    var delivery by remember(alarm.key) { mutableStateOf(alarm.delivery) }
+    var soundEnabled by remember(alarm.key) { mutableStateOf(alarm.soundEnabled) }
+    var vibrationEnabled by remember(alarm.key) { mutableStateOf(alarm.vibrationEnabled) }
+    var effects by remember(alarm.key) { mutableStateOf(alarm.effects) }
+    val selectedRule = settings.ruleFor(alarm, scope)
+    LaunchedEffect(scope, alarm.key, selectedRule) {
+        val rule = selectedRule
+        leadText = (rule?.leadMinutes
+            ?: ((alarm.eventStartMillis - alarm.alarmAtMillis) / 60_000L).toInt().coerceAtLeast(0)).toString()
+        delivery = rule?.delivery ?: alarm.delivery
+        soundEnabled = rule?.soundEnabled ?: alarm.soundEnabled
+        vibrationEnabled = rule?.vibrationEnabled ?: alarm.vibrationEnabled
+        effects = rule?.effects ?: alarm.effects
+    }
+    val leadMinutes = leadText.toIntOrNull()?.coerceIn(0, 14 * 24 * 60)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(tr("Настройка события"))
+                Text(
+                    alarm.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(tr("Применять правило"), fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EventRuleScope.entries.forEach { candidate ->
+                        FilterChip(
+                            selected = scope == candidate,
+                            onClick = { scope = candidate },
+                            label = { Text(eventRuleScopeName(candidate)) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = leadText,
+                    onValueChange = { value -> leadText = value.filter(Char::isDigit).take(5) },
+                    label = { Text(tr("За сколько минут до события")) },
+                    supportingText = { leadMinutes?.let { Text(formatLead(it)) } },
+                    isError = leadMinutes == null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(tr("Тип сигнала"), fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = delivery == AlarmDelivery.ALARM,
+                        onClick = { delivery = AlarmDelivery.ALARM },
+                        label = { Text(tr("Будильник")) },
+                    )
+                    FilterChip(
+                        selected = delivery == AlarmDelivery.SILENT_REMINDER,
+                        onClick = {
+                            delivery = AlarmDelivery.SILENT_REMINDER
+                            soundEnabled = false
+                        },
+                        label = { Text(tr("Тихое напоминание")) },
+                    )
+                }
+                ToggleRow(
+                    title = tr("Звук"),
+                    subtitle = tr("Использовать мелодию будильника"),
+                    checked = delivery == AlarmDelivery.ALARM && soundEnabled,
+                    onChecked = { soundEnabled = it },
+                    enabled = delivery == AlarmDelivery.ALARM,
+                )
+                ToggleRow(
+                    title = tr("Вибрация"),
+                    subtitle = tr("Вибрировать при показе экрана"),
+                    checked = vibrationEnabled,
+                    onChecked = { vibrationEnabled = it },
+                )
+                ToggleRow(
+                    title = tr("Высокая яркость"),
+                    subtitle = tr("Подсветить экран во время сигнала"),
+                    checked = effects.highBrightnessEnabled,
+                    onChecked = { effects = effects.copy(highBrightnessEnabled = it) },
+                )
+                ToggleRow(
+                    title = tr("Фонарик"),
+                    subtitle = tr("Включать вспышку во время сигнала"),
+                    checked = effects.torchEnabled,
+                    onChecked = { effects = effects.copy(torchEnabled = it) },
+                )
+                Text(tr("Сила вибрации: %d%%", effects.vibrationIntensity), fontWeight = FontWeight.Medium)
+                Slider(
+                    value = effects.vibrationIntensity.toFloat(),
+                    onValueChange = { effects = effects.copy(vibrationIntensity = it.roundToInt().coerceIn(1, 100)) },
+                    valueRange = 1f..100f,
+                )
+                if (selectedRule != null) {
+                    Text(
+                        tr("Для этого режима уже сохранено индивидуальное правило"),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    leadMinutes?.let { onSave(scope, it, delivery, soundEnabled, vibrationEnabled, effects) }
+                },
+                enabled = leadMinutes != null,
+            ) { Text(tr("Сохранить")) }
+        },
+        dismissButton = {
+            Row {
+                if (selectedRule != null) {
+                    TextButton(onClick = { onReset(scope) }) { Text(tr("Сбросить правило")) }
+                }
+                TextButton(onClick = onDismiss) { Text(tr("Отмена")) }
+            }
+        },
+    )
+}
+
+private fun AppSettings.ruleFor(alarm: ScheduledAlarm, scope: EventRuleScope): EventAlarmRule? {
+    val match = if (scope == EventRuleScope.THIS_EVENT) {
+        alarm.key
+    } else {
+        alarm.title.trim().lowercase(Locale.ROOT)
+    }
+    return eventAlarmRules.firstOrNull { it.scope == scope && it.match == match }
 }
 
 @Composable
@@ -1244,6 +1560,13 @@ private fun SettingsScreen(
     onShowImportantTab: (Boolean) -> Unit,
     onIncludeUnselectedCalendars: (Boolean) -> Unit,
     onShowAllEventsTab: (Boolean) -> Unit,
+    onCalendarLeadMinutes: (Long, Int?) -> Unit,
+    onDefaultEventRuleScope: (EventRuleScope) -> Unit,
+    onFullSwipeEnabled: (Boolean) -> Unit,
+    onSwipeDirection: (SwipeDirection) -> Unit,
+    onLeftSwipeAction: (SwipeAction) -> Unit,
+    onRightSwipeAction: (SwipeAction) -> Unit,
+    onLauncherIcon: (LauncherIcon) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
     onCustomAccentColor: (Int) -> Unit,
@@ -1266,6 +1589,7 @@ private fun SettingsScreen(
     var alarmEffectsExpanded by rememberSaveable { mutableStateOf(false) }
     var reminderEffectsExpanded by rememberSaveable { mutableStateOf(false) }
     var importantTitle by rememberSaveable { mutableStateOf("") }
+    var calendarForLead by remember { mutableStateOf<CalendarInfo?>(null) }
     val context = LocalContext.current
     val selectedCalendars = state.calendars.filter { calendar ->
         state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds
@@ -1307,6 +1631,18 @@ private fun SettingsScreen(
             onSelect = { language ->
                 showLanguageDialog = false
                 onAppLanguage(language)
+            },
+        )
+    }
+    calendarForLead?.let { calendar ->
+        CalendarLeadTimeDialog(
+            calendar = calendar,
+            defaultMinutes = state.settings.leadMinutes,
+            customMinutes = state.settings.calendarLeadMinutes[calendar.id],
+            onDismiss = { calendarForLead = null },
+            onConfirm = { minutes ->
+                onCalendarLeadMinutes(calendar.id, minutes)
+                calendarForLead = null
             },
         )
     }
@@ -1874,7 +2210,9 @@ private fun SettingsScreen(
                             calendar = calendar,
                             checked = state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds,
                             enabled = true,
+                            leadMinutes = state.settings.calendarLeadMinutes[calendar.id],
                             onClick = { onToggleCalendar(calendar.id) },
+                            onConfigure = { calendarForLead = calendar },
                         )
                         if (index != state.calendars.lastIndex) HorizontalDivider(Modifier.padding(start = 42.dp))
                     }
@@ -2032,6 +2370,71 @@ private fun SettingsScreen(
                         onClick = onOpenLanguageSettings,
                     )
                 }
+                HorizontalDivider()
+                Text(tr("Правила событий"), fontWeight = FontWeight.SemiBold)
+                Text(
+                    tr("Как по умолчанию сохранять настройку, открытую из карточки события"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EventRuleScope.entries.forEach { scope ->
+                        FilterChip(
+                            selected = state.settings.defaultEventRuleScope == scope,
+                            onClick = { onDefaultEventRuleScope(scope) },
+                            label = { Text(eventRuleScopeName(scope)) },
+                        )
+                    }
+                }
+                HorizontalDivider()
+                ToggleRow(
+                    title = tr("Полное смахивание события"),
+                    subtitle = tr("Выполнять выбранное действие одним длинным свайпом"),
+                    checked = state.settings.fullSwipeEnabled,
+                    onChecked = onFullSwipeEnabled,
+                )
+                MotionVisibility(visible = state.settings.fullSwipeEnabled) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(tr("Разрешённые направления"), fontWeight = FontWeight.Medium)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SwipeDirection.entries.forEach { direction ->
+                                FilterChip(
+                                    selected = state.settings.swipeDirection == direction,
+                                    onClick = { onSwipeDirection(direction) },
+                                    label = { Text(swipeDirectionName(direction)) },
+                                )
+                            }
+                        }
+                        Text(tr("Действие при свайпе влево"), fontWeight = FontWeight.Medium)
+                        SwipeActionChips(state.settings.leftSwipeAction, onLeftSwipeAction)
+                        Text(tr("Действие при свайпе вправо"), fontWeight = FontWeight.Medium)
+                        SwipeActionChips(state.settings.rightSwipeAction, onRightSwipeAction)
+                    }
+                }
+                HorizontalDivider()
+                Text(tr("Иконка приложения"), fontWeight = FontWeight.SemiBold)
+                Text(
+                    tr("10 вариантов с разными формами и цветами; старая иконка выбрана по умолчанию"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LauncherIcon.entries.forEach { icon ->
+                        FilterChip(
+                            selected = state.settings.launcherIcon == icon,
+                            onClick = { onLauncherIcon(icon) },
+                            leadingIcon = {
+                                Box(Modifier.size(16.dp).background(launcherIconColor(icon), CircleShape))
+                            },
+                            label = { Text(launcherIconName(icon)) },
+                        )
+                    }
+                }
+                Text(
+                    tr("Android может обновить значок на рабочем столе через несколько секунд."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
                 HorizontalDivider()
                 Text(tr("Системные разрешения"), fontWeight = FontWeight.SemiBold)
                 Text(
@@ -2340,6 +2743,50 @@ private fun LeadTimeDialog(initialMinutes: Int, onDismiss: () -> Unit, onConfirm
 }
 
 @Composable
+private fun CalendarLeadTimeDialog(
+    calendar: CalendarInfo,
+    defaultMinutes: Int,
+    customMinutes: Int?,
+    onDismiss: () -> Unit,
+    onConfirm: (Int?) -> Unit,
+) {
+    val initialMinutes = customMinutes ?: defaultMinutes
+    var days by remember(calendar.id, initialMinutes) { mutableStateOf((initialMinutes / (24 * 60)).toString()) }
+    var hours by remember(calendar.id, initialMinutes) { mutableStateOf(((initialMinutes / 60) % 24).toString()) }
+    var minutes by remember(calendar.id, initialMinutes) { mutableStateOf((initialMinutes % 60).toString()) }
+    val total = ((days.toIntOrNull() ?: 0).coerceIn(0, 14) * 24 * 60) +
+        ((hours.toIntOrNull() ?: 0).coerceIn(0, 23) * 60) +
+        (minutes.toIntOrNull() ?: 0).coerceIn(0, 59)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Время для календаря")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(calendar.displayName, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    tr("Все события этого календаря будут напоминать за выбранное время, если у события нет собственного правила."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DurationField(days, { days = it.filter(Char::isDigit).take(2) }, tr("Дни"), Modifier.weight(1f))
+                    DurationField(hours, { hours = it.filter(Char::isDigit).take(2) }, tr("Часы"), Modifier.weight(1f))
+                    DurationField(minutes, { minutes = it.filter(Char::isDigit).take(2) }, tr("Мин"), Modifier.weight(1f))
+                }
+                Text(tr("Итого: %s", formatLead(total)), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                if (customMinutes != null) {
+                    OutlinedButton(onClick = { onConfirm(null) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Вернуть общее время: %s", formatLead(defaultMinutes)))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(total) }) { Text(tr("Сохранить")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Отмена")) } },
+    )
+}
+
+@Composable
 private fun DurationField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -2625,7 +3072,14 @@ private fun SettingsCard(icon: ImageVector, title: String, subtitle: String, con
 }
 
 @Composable
-private fun CalendarToggle(calendar: CalendarInfo, checked: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun CalendarToggle(
+    calendar: CalendarInfo,
+    checked: Boolean,
+    enabled: Boolean,
+    leadMinutes: Int?,
+    onClick: () -> Unit,
+    onConfigure: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(12.dp).background(Color(calendar.color), CircleShape))
         Spacer(Modifier.width(12.dp))
@@ -2647,6 +3101,18 @@ private fun CalendarToggle(calendar: CalendarInfo, checked: Boolean, enabled: Bo
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (leadMinutes != null) {
+                Text(
+                    tr("Своё время: %s заранее", formatLead(leadMinutes)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        IconButton(onClick = onConfigure, enabled = enabled) {
+            Icon(Icons.Rounded.Timer, tr("Настроить время календаря"), tint = MaterialTheme.colorScheme.primary)
         }
         Checkbox(checked = checked, enabled = enabled, onCheckedChange = { onClick() })
     }
@@ -2746,15 +3212,87 @@ private fun SettingsActionRow(
 }
 
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+private fun ToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
+            Text(title, fontWeight = FontWeight.Medium, color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.outline)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onChecked)
+        Switch(checked = checked, onCheckedChange = onChecked, enabled = enabled)
     }
 }
+
+@Composable
+private fun SwipeActionChips(selected: SwipeAction, onSelect: (SwipeAction) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SwipeAction.entries.forEach { action ->
+            FilterChip(
+                selected = selected == action,
+                onClick = { onSelect(action) },
+                label = { Text(swipeActionName(action)) },
+            )
+        }
+    }
+}
+
+private fun eventRuleScopeName(scope: EventRuleScope): String = tr(
+    when (scope) {
+        EventRuleScope.THIS_EVENT -> "Только это событие"
+        EventRuleScope.SAME_TITLE -> "Все будущие с этим названием"
+    },
+)
+
+private fun swipeDirectionName(direction: SwipeDirection): String = tr(
+    when (direction) {
+        SwipeDirection.LEFT -> "Только влево"
+        SwipeDirection.RIGHT -> "Только вправо"
+        SwipeDirection.BOTH -> "В обе стороны"
+    },
+)
+
+private fun swipeActionName(action: SwipeAction): String = tr(
+    when (action) {
+        SwipeAction.REVEAL -> "Показать кнопки"
+        SwipeAction.SILENT -> "Без звука"
+        SwipeAction.SKIP -> "Пропустить"
+    },
+)
+
+private fun launcherIconName(icon: LauncherIcon): String = tr(
+    when (icon) {
+        LauncherIcon.CLASSIC -> "Классическая"
+        LauncherIcon.ORBIT -> "Орбита"
+        LauncherIcon.CHECK -> "Готово"
+        LauncherIcon.BELL -> "Колокол"
+        LauncherIcon.CALENDAR -> "Календарь"
+        LauncherIcon.SUNRISE -> "Рассвет"
+        LauncherIcon.STAR -> "Звезда"
+        LauncherIcon.MINIMAL -> "Минимализм"
+        LauncherIcon.RING -> "Кольцо"
+        LauncherIcon.HOURGLASS -> "Песочные часы"
+    },
+)
+
+private fun launcherIconColor(icon: LauncherIcon): Color = Color(
+    when (icon) {
+        LauncherIcon.CLASSIC -> 0xFF6558D3
+        LauncherIcon.ORBIT -> 0xFF5143C7
+        LauncherIcon.CHECK -> 0xFF177D6B
+        LauncherIcon.BELL -> 0xFFE06A35
+        LauncherIcon.CALENDAR -> 0xFF3478D4
+        LauncherIcon.SUNRISE -> 0xFFD94E73
+        LauncherIcon.STAR -> 0xFF7250B5
+        LauncherIcon.MINIMAL -> 0xFF20242C
+        LauncherIcon.RING -> 0xFF008E9B
+        LauncherIcon.HOURGLASS -> 0xFFA76A19
+    },
+)
 
 private fun formatLead(minutes: Int): String {
     if (minutes == 0) return tr("В момент начала")

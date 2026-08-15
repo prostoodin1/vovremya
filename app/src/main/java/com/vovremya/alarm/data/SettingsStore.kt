@@ -65,6 +65,14 @@ class SettingsStore(private val context: Context) {
         val showImportantTab = booleanPreferencesKey("show_important_tab")
         val includeUnselectedCalendarsAsSilent = booleanPreferencesKey("include_unselected_calendars_silent")
         val showAllEventsTab = booleanPreferencesKey("show_all_events_tab")
+        val eventAlarmRules = stringPreferencesKey("event_alarm_rules")
+        val calendarLeadMinutes = stringPreferencesKey("calendar_lead_minutes")
+        val defaultEventRuleScope = stringPreferencesKey("default_event_rule_scope")
+        val fullSwipeEnabled = booleanPreferencesKey("full_swipe_enabled")
+        val swipeDirection = stringPreferencesKey("swipe_direction")
+        val leftSwipeAction = stringPreferencesKey("left_swipe_action")
+        val rightSwipeAction = stringPreferencesKey("right_swipe_action")
+        val launcherIcon = stringPreferencesKey("launcher_icon")
         val skippedEventKeys = stringPreferencesKey("skipped_event_keys")
         val skippedDates = stringPreferencesKey("skipped_dates")
         val skippedAlarms = stringPreferencesKey("skipped_alarms")
@@ -212,6 +220,60 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setShowAllEventsTab(enabled: Boolean) = context.vovremyaDataStore.edit {
         it[Keys.showAllEventsTab] = enabled
+    }
+
+    suspend fun setEventAlarmRule(rule: EventAlarmRule) = context.vovremyaDataStore.edit { preferences ->
+        val normalized = rule.copy(
+            match = rule.match.trim(),
+            title = rule.title.trim(),
+            leadMinutes = rule.leadMinutes.coerceIn(0, 14 * 24 * 60),
+            effects = rule.effects.copy(
+                torchBlinkMillis = rule.effects.torchBlinkMillis.coerceIn(100, 2_000),
+                torchRepeatCount = rule.effects.torchRepeatCount.coerceIn(1, 100),
+                vibrationIntensity = rule.effects.vibrationIntensity.coerceIn(1, 100),
+            ),
+        )
+        val rules = decodeEventRules(preferences[Keys.eventAlarmRules])
+            .filterNot { it.scope == normalized.scope && it.match == normalized.match } + normalized
+        preferences[Keys.eventAlarmRules] = encodeEventRules(rules)
+    }
+
+    suspend fun removeEventAlarmRule(scope: EventRuleScope, match: String) = context.vovremyaDataStore.edit { preferences ->
+        preferences[Keys.eventAlarmRules] = encodeEventRules(
+            decodeEventRules(preferences[Keys.eventAlarmRules])
+                .filterNot { it.scope == scope && it.match == match },
+        )
+    }
+
+    suspend fun setCalendarLeadMinutes(calendarId: Long, minutes: Int?) = context.vovremyaDataStore.edit { preferences ->
+        val current = decodeCalendarLeadMinutes(preferences[Keys.calendarLeadMinutes]).toMutableMap()
+        if (minutes == null) current.remove(calendarId)
+        else current[calendarId] = minutes.coerceIn(0, 14 * 24 * 60)
+        preferences[Keys.calendarLeadMinutes] = encodeCalendarLeadMinutes(current)
+    }
+
+    suspend fun setDefaultEventRuleScope(scope: EventRuleScope) = context.vovremyaDataStore.edit {
+        it[Keys.defaultEventRuleScope] = scope.name
+    }
+
+    suspend fun setFullSwipeEnabled(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.fullSwipeEnabled] = enabled
+    }
+
+    suspend fun setSwipeDirection(direction: SwipeDirection) = context.vovremyaDataStore.edit {
+        it[Keys.swipeDirection] = direction.name
+    }
+
+    suspend fun setLeftSwipeAction(action: SwipeAction) = context.vovremyaDataStore.edit {
+        it[Keys.leftSwipeAction] = action.name
+    }
+
+    suspend fun setRightSwipeAction(action: SwipeAction) = context.vovremyaDataStore.edit {
+        it[Keys.rightSwipeAction] = action.name
+    }
+
+    suspend fun setLauncherIcon(icon: LauncherIcon) = context.vovremyaDataStore.edit {
+        it[Keys.launcherIcon] = icon.name
     }
 
     suspend fun skipAlarm(alarm: ScheduledAlarm) = context.vovremyaDataStore.edit { preferences ->
@@ -384,6 +446,24 @@ class SettingsStore(private val context: Context) {
             showImportantTab = preferences[Keys.showImportantTab] ?: false,
             includeUnselectedCalendarsAsSilent = preferences[Keys.includeUnselectedCalendarsAsSilent] ?: false,
             showAllEventsTab = preferences[Keys.showAllEventsTab] ?: false,
+            eventAlarmRules = decodeEventRules(preferences[Keys.eventAlarmRules]),
+            calendarLeadMinutes = decodeCalendarLeadMinutes(preferences[Keys.calendarLeadMinutes]),
+            defaultEventRuleScope = preferences[Keys.defaultEventRuleScope]
+                ?.let { stored -> EventRuleScope.entries.firstOrNull { it.name == stored } }
+                ?: EventRuleScope.SAME_TITLE,
+            fullSwipeEnabled = preferences[Keys.fullSwipeEnabled] ?: false,
+            swipeDirection = preferences[Keys.swipeDirection]
+                ?.let { stored -> SwipeDirection.entries.firstOrNull { it.name == stored } }
+                ?: SwipeDirection.BOTH,
+            leftSwipeAction = preferences[Keys.leftSwipeAction]
+                ?.let { stored -> SwipeAction.entries.firstOrNull { it.name == stored } }
+                ?: SwipeAction.SILENT,
+            rightSwipeAction = preferences[Keys.rightSwipeAction]
+                ?.let { stored -> SwipeAction.entries.firstOrNull { it.name == stored } }
+                ?: SwipeAction.SKIP,
+            launcherIcon = preferences[Keys.launcherIcon]
+                ?.let { stored -> LauncherIcon.entries.firstOrNull { it.name == stored } }
+                ?: LauncherIcon.CLASSIC,
             skippedEventKeys = decodeStringSet(preferences[Keys.skippedEventKeys]),
             skippedDates = decodeDates(preferences[Keys.skippedDates]),
             themeMode = preferences[Keys.themeMode]
@@ -429,6 +509,7 @@ class SettingsStore(private val context: Context) {
                 put("autoSilenceMinutes", alarm.autoSilenceMinutes)
                 put("important", alarm.isImportant)
                 put("unselectedCalendar", alarm.fromUnselectedCalendar)
+                put("customRule", alarm.customRuleApplied)
             })
         }
     }.toString()
@@ -482,6 +563,7 @@ class SettingsStore(private val context: Context) {
                         autoSilenceMinutes = item.optInt("autoSilenceMinutes", 10).coerceIn(1, 60),
                         isImportant = item.optBoolean("important", false),
                         fromUnselectedCalendar = item.optBoolean("unselectedCalendar", false),
+                        customRuleApplied = item.optBoolean("customRule", false),
                     ),
                 )
             }
@@ -513,6 +595,77 @@ class SettingsStore(private val context: Context) {
         val json = JSONArray(raw)
         buildSet { repeat(json.length()) { index -> add(json.getString(index)) } }
     }.getOrDefault(emptySet())
+
+    private fun encodeEventRules(rules: List<EventAlarmRule>): String = JSONArray().apply {
+        rules.sortedWith(compareBy(EventAlarmRule::scope, EventAlarmRule::match)).forEach { rule ->
+            put(JSONObject().apply {
+                put("match", rule.match)
+                put("title", rule.title)
+                put("scope", rule.scope.name)
+                put("leadMinutes", rule.leadMinutes)
+                put("delivery", rule.delivery.name)
+                put("soundEnabled", rule.soundEnabled)
+                put("vibrationEnabled", rule.vibrationEnabled)
+                put("highBrightness", rule.effects.highBrightnessEnabled)
+                put("torchEnabled", rule.effects.torchEnabled)
+                put("torchMode", rule.effects.torchMode.name)
+                put("torchBlinkMillis", rule.effects.torchBlinkMillis)
+                put("torchRepeatCount", rule.effects.torchRepeatCount)
+                put("vibrationIntensity", rule.effects.vibrationIntensity)
+            })
+        }
+    }.toString()
+
+    private fun decodeEventRules(raw: String?): List<EventAlarmRule> = runCatching {
+        if (raw.isNullOrBlank()) return@runCatching emptyList()
+        val json = JSONArray(raw)
+        buildList {
+            repeat(json.length()) { index ->
+                val item = json.getJSONObject(index)
+                val match = item.optString("match").trim()
+                if (match.isBlank()) return@repeat
+                add(
+                    EventAlarmRule(
+                        match = match,
+                        title = item.optString("title").trim(),
+                        scope = item.optString("scope")
+                            .let { stored -> EventRuleScope.entries.firstOrNull { it.name == stored } }
+                            ?: EventRuleScope.THIS_EVENT,
+                        leadMinutes = item.optInt("leadMinutes", 90).coerceIn(0, 14 * 24 * 60),
+                        delivery = item.optString("delivery")
+                            .let { stored -> AlarmDelivery.entries.firstOrNull { it.name == stored } }
+                            ?: AlarmDelivery.ALARM,
+                        soundEnabled = item.optBoolean("soundEnabled", true),
+                        vibrationEnabled = item.optBoolean("vibrationEnabled", true),
+                        effects = SignalEffects(
+                            highBrightnessEnabled = item.optBoolean("highBrightness", false),
+                            torchEnabled = item.optBoolean("torchEnabled", false),
+                            torchMode = item.optString("torchMode")
+                                .let { stored -> TorchMode.entries.firstOrNull { it.name == stored } }
+                                ?: TorchMode.BLINK,
+                            torchBlinkMillis = item.optInt("torchBlinkMillis", 500).coerceIn(100, 2_000),
+                            torchRepeatCount = item.optInt("torchRepeatCount", 10).coerceIn(1, 100),
+                            vibrationIntensity = item.optInt("vibrationIntensity", 100).coerceIn(1, 100),
+                        ),
+                    ),
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodeCalendarLeadMinutes(values: Map<Long, Int>): String = JSONObject().apply {
+        values.toSortedMap().forEach { (calendarId, minutes) -> put(calendarId.toString(), minutes) }
+    }.toString()
+
+    private fun decodeCalendarLeadMinutes(raw: String?): Map<Long, Int> = runCatching {
+        if (raw.isNullOrBlank()) return@runCatching emptyMap()
+        val json = JSONObject(raw)
+        buildMap {
+            json.keys().forEach { key ->
+                key.toLongOrNull()?.let { id -> put(id, json.optInt(key, 90).coerceIn(0, 14 * 24 * 60)) }
+            }
+        }
+    }.getOrDefault(emptyMap())
 
     private fun encodeDates(values: Set<LocalDate>): String = values.sorted().joinToString(",")
 

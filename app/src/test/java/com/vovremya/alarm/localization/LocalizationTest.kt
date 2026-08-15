@@ -107,4 +107,25 @@ class LocalizationTest {
         Locale.setDefault(Locale.JAPANESE)
         assertEquals("重要な出来事", tr("Важные мероприятия"))
     }
+
+    @Test
+    fun `version 1_7 strings have safe text and matching format arguments`() {
+        assertEquals(16, v17Translations.size)
+        assertTrue(v17Translations.values.all { it.size == 32 })
+        assertTrue(v17Translations.values.all { catalog -> catalog.values.none(String::isBlank) })
+        val formatArgument = Regex("%[ds]")
+        v17Translations.values.forEach { catalog ->
+            catalog.forEach { (source, translated) ->
+                assertEquals(
+                    formatArgument.findAll(source).map { it.value }.toList(),
+                    formatArgument.findAll(translated).map { it.value }.toList(),
+                )
+            }
+        }
+
+        Locale.setDefault(Locale.ENGLISH)
+        assertEquals("Event settings", tr("Настройка события"))
+        Locale.setDefault(Locale.forLanguageTag("es"))
+        assertEquals("Ajustes del evento", tr("Настройка события"))
+    }
 }

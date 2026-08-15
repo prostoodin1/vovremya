@@ -85,7 +85,7 @@ class UpdateManagerTest {
 
         assertEquals(listOf("1.6.0-beta.1", "1.4.0"), catalog.map { it.version })
         assertEquals(listOf(UpdateChannel.BETA, UpdateChannel.STABLE), catalog.map { it.channel })
-        assertEquals(listOf(ReleaseRelation.CURRENT, ReleaseRelation.OLDER), catalog.map { it.relation })
+        assertEquals(listOf(ReleaseRelation.OLDER, ReleaseRelation.OLDER), catalog.map { it.relation })
     }
 
     @Test

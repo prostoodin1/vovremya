@@ -4,6 +4,8 @@ import com.vovremya.alarm.data.AppSettings
 import com.vovremya.alarm.data.AlarmDelivery
 import com.vovremya.alarm.data.CalendarEvent
 import com.vovremya.alarm.data.EventDecision
+import com.vovremya.alarm.data.EventAlarmRule
+import com.vovremya.alarm.data.EventRuleScope
 import com.vovremya.alarm.data.QuickDismissMode
 import com.vovremya.alarm.data.QuickDismissSettings
 import com.vovremya.alarm.data.SignalEffects
@@ -388,6 +390,76 @@ class EventSelectorTest {
         )
 
         assertEquals(listOf(true, true), result.alarms.map { it.isImportant })
+    }
+
+    @Test
+    fun `one event rule overrides calendar and global timing only for its instance`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val firstStart = time(2026, 7, 15, 12, 0)
+        val secondStart = time(2026, 7, 16, 12, 0)
+        val settings = AppSettings(
+            leadMinutes = 30,
+            calendarLeadMinutes = mapOf(10L to 60),
+            eventAlarmRules = listOf(
+                EventAlarmRule(
+                    match = "1:$firstStart",
+                    title = "Weekly meeting",
+                    scope = EventRuleScope.THIS_EVENT,
+                    leadMinutes = 120,
+                    delivery = AlarmDelivery.SILENT_REMINDER,
+                    soundEnabled = false,
+                    vibrationEnabled = true,
+                    effects = SignalEffects(),
+                ),
+            ),
+        )
+
+        val result = EventSelector.select(
+            listOf(
+                event(1, firstStart).copy(title = "Weekly meeting"),
+                event(2, secondStart).copy(title = "Weekly meeting"),
+            ),
+            settings,
+            now,
+            zone,
+        )
+
+        assertEquals(time(2026, 7, 15, 10, 0), result.alarms[0].alarmAtMillis)
+        assertEquals(AlarmDelivery.SILENT_REMINDER, result.alarms[0].delivery)
+        assertEquals(true, result.alarms[0].vibrationEnabled)
+        assertEquals(time(2026, 7, 16, 11, 0), result.alarms[1].alarmAtMillis)
+        assertEquals(AlarmDelivery.ALARM, result.alarms[1].delivery)
+    }
+
+    @Test
+    fun `same title rule applies to future matching events case insensitively`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val settings = AppSettings(
+            leadMinutes = 30,
+            eventAlarmRules = listOf(
+                EventAlarmRule(
+                    match = "dentist",
+                    title = "Dentist",
+                    scope = EventRuleScope.SAME_TITLE,
+                    leadMinutes = 180,
+                    delivery = AlarmDelivery.ALARM,
+                    soundEnabled = true,
+                    vibrationEnabled = false,
+                    effects = SignalEffects(),
+                ),
+            ),
+        )
+
+        val result = EventSelector.select(
+            listOf(event(1, time(2026, 7, 15, 12, 0)).copy(title = " DENTIST ")),
+            settings,
+            now,
+            zone,
+        )
+
+        assertEquals(time(2026, 7, 15, 9, 0), result.alarms.single().alarmAtMillis)
+        assertEquals(true, result.alarms.single().customRuleApplied)
+        assertEquals(false, result.alarms.single().vibrationEnabled)
     }
 
     private fun event(id: Long, start: Long, calendarId: Long = 10) = CalendarEvent(

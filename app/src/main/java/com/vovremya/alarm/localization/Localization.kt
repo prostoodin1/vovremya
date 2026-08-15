@@ -365,7 +365,7 @@ fun appLocale(): Locale {
 fun tr(source: String, vararg args: Any?): String {
     val translation = translations[source]
     val language = appLocale().language
-    val value = v16Translations[language]?.get(source) ?: when (language) {
+    val value = v17Translations[language]?.get(source) ?: v16Translations[language]?.get(source) ?: when (language) {
         "ru" -> translation?.ru
         "de" -> translation?.de
         "fr" -> translation?.fr

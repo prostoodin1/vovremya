@@ -24,6 +24,7 @@ class VovremyaApplication : Application() {
         container.notificationHelper.createChannels()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             val settings = container.settingsStore.settings.first()
+            container.launcherIconManager.apply(settings.launcherIcon)
             container.dailySyncScheduler.scheduleNext(settings.dailySyncMinutes)
             if (settings.automaticUpdates) {
                 container.updateManager.checkAndDownloadUpdate(
