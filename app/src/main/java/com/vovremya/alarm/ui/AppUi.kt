@@ -1287,64 +1287,63 @@ private fun RevealableAlarmContainer(
             offset.value < -with(density) { 8.dp.toPx() } -> -1
             else -> revealSign
         }
+        val backdropMode = swipeBackdropMode(
+            hasPendingAction = pendingAction != null,
+        )
         Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
-            Row(
-                modifier = Modifier.matchParentSize().padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(
-                    6.dp,
-                    if (visualSign > 0) Alignment.Start else Alignment.End,
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (cancelled) {
-                    AlarmActionButton(tr("Вернуть"), Icons.Rounded.Refresh, Mint) {
-                        onRevealedChange(false)
-                        onRestore()
-                    }
-                } else {
-                    AlarmActionButton(tr("Пропустить"), Icons.Rounded.SkipNext, MaterialTheme.colorScheme.error) {
-                        onRevealedChange(false)
-                        onSkip()
-                    }
-                }
-                AlarmActionButton(tr("Настроить"), Icons.Rounded.Tune, MaterialTheme.colorScheme.primary) {
-                    onRevealedChange(false)
-                    onConfigure()
-                }
-                AlarmActionButton(tr("Закрыть"), Icons.Rounded.ChevronRight, Mint) {
-                    onRevealedChange(false)
-                }
-            }
-            val previewAction = pendingAction
-            if (previewAction != null) {
-                Surface(
-                    modifier = Modifier
-                        .align(if (pendingSign > 0) Alignment.CenterStart else Alignment.CenterEnd)
-                        .padding(horizontal = 22.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable { runAction(previewAction, pendingSign) },
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(18.dp),
+            when (backdropMode) {
+                SwipeBackdropMode.ACTIONS -> Row(
+                    modifier = Modifier.matchParentSize().padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        6.dp,
+                        if (visualSign > 0) Alignment.Start else Alignment.End,
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        SwipeActionHint(action = previewAction)
-                        Text(
-                            tr("Нажмите, чтобы подтвердить"),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
+                    if (cancelled) {
+                        AlarmActionButton(tr("Вернуть"), Icons.Rounded.Refresh, Mint) {
+                            onRevealedChange(false)
+                            onRestore()
+                        }
+                    } else {
+                        AlarmActionButton(tr("Пропустить"), Icons.Rounded.SkipNext, MaterialTheme.colorScheme.error) {
+                            onRevealedChange(false)
+                            onSkip()
+                        }
+                    }
+                    AlarmActionButton(tr("Настроить"), Icons.Rounded.Tune, MaterialTheme.colorScheme.primary) {
+                        onRevealedChange(false)
+                        onConfigure()
+                    }
+                    AlarmActionButton(tr("Закрыть"), Icons.Rounded.ChevronRight, Mint) {
+                        onRevealedChange(false)
                     }
                 }
-            } else if (settings.fullSwipeEnabled && abs(offset.value) > actionOffsetPx * .14f) {
-                SwipeActionHint(
-                    action = if (offset.value > 0f) settings.rightSwipeAction else settings.leftSwipeAction,
-                    modifier = Modifier
-                        .align(if (offset.value > 0f) Alignment.CenterStart else Alignment.CenterEnd)
-                        .padding(horizontal = 22.dp),
-                )
+
+                SwipeBackdropMode.CONFIRMATION -> pendingAction?.let { previewAction ->
+                    Surface(
+                        modifier = Modifier
+                            .align(if (pendingSign > 0) Alignment.CenterStart else Alignment.CenterEnd)
+                            .padding(horizontal = 22.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { runAction(previewAction, pendingSign) },
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            SwipeActionHint(action = previewAction)
+                            Text(
+                                tr("Нажмите, чтобы подтвердить"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+
             }
         }
         content(
@@ -1415,6 +1414,18 @@ private fun RevealableAlarmContainer(
     }
 }
 
+internal enum class SwipeBackdropMode {
+    ACTIONS,
+    CONFIRMATION,
+}
+
+internal fun swipeBackdropMode(
+    hasPendingAction: Boolean,
+): SwipeBackdropMode = when {
+    hasPendingAction -> SwipeBackdropMode.CONFIRMATION
+    else -> SwipeBackdropMode.ACTIONS
+}
+
 @Composable
 private fun SwipeActionHint(action: SwipeAction, modifier: Modifier = Modifier) {
     val icon = when (action) {
@@ -1448,7 +1459,16 @@ private fun AlarmActionButton(
         ) {
             Icon(icon, null, Modifier.size(21.dp), tint = color)
             Spacer(Modifier.height(4.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
+            Text(
+                text = label,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }
