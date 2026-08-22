@@ -128,4 +128,25 @@ class LocalizationTest {
         Locale.setDefault(Locale.forLanguageTag("es"))
         assertEquals("Ajustes del evento", tr("Настройка события"))
     }
+
+    @Test
+    fun `version 1_8 strings have safe text and matching format arguments`() {
+        assertEquals(16, v18Translations.size)
+        assertTrue(v18Translations.values.all { it.size == 20 })
+        assertTrue(v18Translations.values.all { catalog -> catalog.values.none(String::isBlank) })
+        val formatArgument = Regex("%[ds]")
+        v18Translations.values.forEach { catalog ->
+            catalog.forEach { (source, translated) ->
+                assertEquals(
+                    formatArgument.findAll(source).map { it.value }.toList(),
+                    formatArgument.findAll(translated).map { it.value }.toList(),
+                )
+            }
+        }
+
+        Locale.setDefault(Locale.ENGLISH)
+        assertEquals("Whole calendars", tr("Целые календари"))
+        Locale.setDefault(Locale.forLanguageTag("es"))
+        assertEquals("Toca para confirmar", tr("Нажмите, чтобы подтвердить"))
+    }
 }

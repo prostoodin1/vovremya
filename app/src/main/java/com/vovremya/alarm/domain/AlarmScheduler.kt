@@ -116,6 +116,8 @@ class AlarmScheduler(
                 putExtra(AlarmPayload.EXTRA_SOUND_URI, alarm.soundUri)
                 putExtra(AlarmPayload.EXTRA_SNOOZE_MINUTES, alarm.snoozeMinutes)
                 putExtra(AlarmPayload.EXTRA_AUTO_SILENCE_MINUTES, alarm.autoSilenceMinutes)
+                putExtra(AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_ENABLED, alarm.reminderAutoDismissEnabled)
+                putExtra(AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_MINUTES, alarm.reminderAutoDismissMinutes)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

@@ -111,6 +111,14 @@ class NotificationHelper(private val context: Context) {
         }
         val soundEnabled = !isReminder && intent.getBooleanExtra(AlarmPayload.EXTRA_SOUND_ENABLED, true)
         val vibrationEnabled = intent.getBooleanExtra(AlarmPayload.EXTRA_VIBRATION_ENABLED, true)
+        val autoDismissReminder = isReminder && intent.getBooleanExtra(
+            AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_ENABLED,
+            false,
+        )
+        val autoDismissMinutes = intent.getIntExtra(
+            AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_MINUTES,
+            5,
+        ).coerceIn(1, 60)
         val fullScreen = Intent(context, AlarmActivity::class.java).apply {
             putExtras(intent)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -139,6 +147,9 @@ class NotificationHelper(private val context: Context) {
             .setAutoCancel(false)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setContentIntent(fullScreenPendingIntent)
+            .apply {
+                if (autoDismissReminder) setTimeoutAfter(autoDismissMinutes * 60_000L)
+            }
             .build()
         notifySafely(alarmNotificationId(key), notification)
     }

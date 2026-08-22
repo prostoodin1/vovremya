@@ -253,6 +253,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         container.settingsStore.setAutoSilenceMinutes(minutes)
     }
 
+    fun setReminderAutoDismissEnabled(enabled: Boolean) = updateAndSync {
+        container.settingsStore.setReminderAutoDismissEnabled(enabled)
+    }
+
+    fun setReminderAutoDismissMinutes(minutes: Int) = updateAndSync {
+        container.settingsStore.setReminderAutoDismissMinutes(minutes)
+    }
+
     fun toggleDay(day: DayOfWeek) = updateAndSync {
         val current = state.value.settings.enabledDays
         container.settingsStore.setEnabledDays(
@@ -317,6 +325,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val existing = current.firstOrNull { it.equals(cleanTitle, ignoreCase = true) }
         container.settingsStore.setImportantEventTitles(
             if (existing == null) current + cleanTitle else current - existing,
+        )
+    }
+
+    fun toggleImportantCalendar(calendarId: Long) = updateAndSync {
+        if (state.value.calendars.none { it.id == calendarId }) return@updateAndSync
+        val current = state.value.settings.importantCalendarIds
+        container.settingsStore.setImportantCalendarIds(
+            if (calendarId in current) current - calendarId else current + calendarId,
         )
     }
 
@@ -395,6 +411,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setRightSwipeAction(action: SwipeAction) {
         viewModelScope.launch { container.settingsStore.setRightSwipeAction(action) }
+    }
+
+    fun setSwipePreviewEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSwipePreviewEnabled(enabled) }
     }
 
     fun setLauncherIcon(icon: LauncherIcon) {

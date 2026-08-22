@@ -53,6 +53,8 @@ class SettingsStore(private val context: Context) {
         val alarmSoundUri = stringPreferencesKey("alarm_sound_uri")
         val snoozeMinutes = intPreferencesKey("snooze_minutes")
         val autoSilenceMinutes = intPreferencesKey("auto_silence_minutes")
+        val reminderAutoDismissEnabled = booleanPreferencesKey("reminder_auto_dismiss_enabled")
+        val reminderAutoDismissMinutes = intPreferencesKey("reminder_auto_dismiss_minutes")
         val enabledDays = stringPreferencesKey("enabled_days")
         val calendarIds = stringPreferencesKey("calendar_ids")
         val automaticUpdates = booleanPreferencesKey("automatic_updates")
@@ -62,6 +64,7 @@ class SettingsStore(private val context: Context) {
         val bottomBarHideSeconds = intPreferencesKey("bottom_bar_hide_seconds")
         val reduceAnimations = booleanPreferencesKey("reduce_animations")
         val importantEventTitles = stringPreferencesKey("important_event_titles")
+        val importantCalendarIds = stringPreferencesKey("important_calendar_ids")
         val showImportantTab = booleanPreferencesKey("show_important_tab")
         val includeUnselectedCalendarsAsSilent = booleanPreferencesKey("include_unselected_calendars_silent")
         val showAllEventsTab = booleanPreferencesKey("show_all_events_tab")
@@ -72,6 +75,7 @@ class SettingsStore(private val context: Context) {
         val swipeDirection = stringPreferencesKey("swipe_direction")
         val leftSwipeAction = stringPreferencesKey("left_swipe_action")
         val rightSwipeAction = stringPreferencesKey("right_swipe_action")
+        val swipePreviewEnabled = booleanPreferencesKey("swipe_preview_enabled")
         val launcherIcon = stringPreferencesKey("launcher_icon")
         val skippedEventKeys = stringPreferencesKey("skipped_event_keys")
         val skippedDates = stringPreferencesKey("skipped_dates")
@@ -174,6 +178,14 @@ class SettingsStore(private val context: Context) {
         it[Keys.autoSilenceMinutes] = value.coerceIn(1, 60)
     }
 
+    suspend fun setReminderAutoDismissEnabled(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.reminderAutoDismissEnabled] = enabled
+    }
+
+    suspend fun setReminderAutoDismissMinutes(value: Int) = context.vovremyaDataStore.edit {
+        it[Keys.reminderAutoDismissMinutes] = value.coerceIn(1, 60)
+    }
+
     suspend fun setEnabledDays(days: Set<DayOfWeek>) = context.vovremyaDataStore.edit {
         it[Keys.enabledDays] = days.sortedBy(DayOfWeek::getValue).joinToString(",") { day -> day.value.toString() }
     }
@@ -208,6 +220,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setImportantEventTitles(values: Set<String>) = context.vovremyaDataStore.edit {
         it[Keys.importantEventTitles] = encodeStringSet(values.map(String::trim).filter(String::isNotBlank).toSet())
+    }
+
+    suspend fun setImportantCalendarIds(values: Set<Long>) = context.vovremyaDataStore.edit {
+        it[Keys.importantCalendarIds] = values.sorted().joinToString(",")
     }
 
     suspend fun setShowImportantTab(enabled: Boolean) = context.vovremyaDataStore.edit {
@@ -270,6 +286,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setRightSwipeAction(action: SwipeAction) = context.vovremyaDataStore.edit {
         it[Keys.rightSwipeAction] = action.name
+    }
+
+    suspend fun setSwipePreviewEnabled(enabled: Boolean) = context.vovremyaDataStore.edit {
+        it[Keys.swipePreviewEnabled] = enabled
     }
 
     suspend fun setLauncherIcon(icon: LauncherIcon) = context.vovremyaDataStore.edit {
@@ -430,6 +450,8 @@ class SettingsStore(private val context: Context) {
             alarmSoundUri = preferences[Keys.alarmSoundUri].orEmpty(),
             snoozeMinutes = preferences[Keys.snoozeMinutes] ?: 10,
             autoSilenceMinutes = preferences[Keys.autoSilenceMinutes] ?: 10,
+            reminderAutoDismissEnabled = preferences[Keys.reminderAutoDismissEnabled] ?: false,
+            reminderAutoDismissMinutes = (preferences[Keys.reminderAutoDismissMinutes] ?: 5).coerceIn(1, 60),
             enabledDays = days,
             selectedCalendarIds = calendars,
             automaticUpdates = preferences[Keys.automaticUpdates] ?: true,
@@ -443,6 +465,7 @@ class SettingsStore(private val context: Context) {
             bottomBarHideSeconds = (preferences[Keys.bottomBarHideSeconds] ?: 5).coerceIn(0, 30),
             reduceAnimations = preferences[Keys.reduceAnimations] ?: false,
             importantEventTitles = decodeStringSet(preferences[Keys.importantEventTitles]),
+            importantCalendarIds = decodeLongSet(preferences[Keys.importantCalendarIds]),
             showImportantTab = preferences[Keys.showImportantTab] ?: false,
             includeUnselectedCalendarsAsSilent = preferences[Keys.includeUnselectedCalendarsAsSilent] ?: false,
             showAllEventsTab = preferences[Keys.showAllEventsTab] ?: false,
@@ -461,6 +484,7 @@ class SettingsStore(private val context: Context) {
             rightSwipeAction = preferences[Keys.rightSwipeAction]
                 ?.let { stored -> SwipeAction.entries.firstOrNull { it.name == stored } }
                 ?: SwipeAction.SKIP,
+            swipePreviewEnabled = preferences[Keys.swipePreviewEnabled] ?: false,
             launcherIcon = preferences[Keys.launcherIcon]
                 ?.let { stored -> LauncherIcon.entries.firstOrNull { it.name == stored } }
                 ?: LauncherIcon.CLASSIC,
@@ -507,6 +531,8 @@ class SettingsStore(private val context: Context) {
                 put("soundUri", alarm.soundUri)
                 put("snoozeMinutes", alarm.snoozeMinutes)
                 put("autoSilenceMinutes", alarm.autoSilenceMinutes)
+                put("reminderAutoDismissEnabled", alarm.reminderAutoDismissEnabled)
+                put("reminderAutoDismissMinutes", alarm.reminderAutoDismissMinutes)
                 put("important", alarm.isImportant)
                 put("unselectedCalendar", alarm.fromUnselectedCalendar)
                 put("customRule", alarm.customRuleApplied)
@@ -561,6 +587,8 @@ class SettingsStore(private val context: Context) {
                         soundUri = item.optString("soundUri"),
                         snoozeMinutes = item.optInt("snoozeMinutes", 10).coerceIn(1, 120),
                         autoSilenceMinutes = item.optInt("autoSilenceMinutes", 10).coerceIn(1, 60),
+                        reminderAutoDismissEnabled = item.optBoolean("reminderAutoDismissEnabled", false),
+                        reminderAutoDismissMinutes = item.optInt("reminderAutoDismissMinutes", 5).coerceIn(1, 60),
                         isImportant = item.optBoolean("important", false),
                         fromUnselectedCalendar = item.optBoolean("unselectedCalendar", false),
                         customRuleApplied = item.optBoolean("customRule", false),
@@ -595,6 +623,12 @@ class SettingsStore(private val context: Context) {
         val json = JSONArray(raw)
         buildSet { repeat(json.length()) { index -> add(json.getString(index)) } }
     }.getOrDefault(emptySet())
+
+    private fun decodeLongSet(raw: String?): Set<Long> = raw
+        ?.split(',')
+        ?.mapNotNull(String::toLongOrNull)
+        ?.toSet()
+        ?: emptySet()
 
     private fun encodeEventRules(rules: List<EventAlarmRule>): String = JSONArray().apply {
         rules.sortedWith(compareBy(EventAlarmRule::scope, EventAlarmRule::match)).forEach { rule ->

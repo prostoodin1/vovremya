@@ -80,4 +80,26 @@ class SilentReminderNotificationTest {
         assertNull(notification.sound)
         assertNotNull(notification.fullScreenIntent)
     }
+
+    @Test
+    fun `later event notification uses configured automatic dismissal`() {
+        val application = RuntimeEnvironment.getApplication()
+        shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val helper = NotificationHelper(application)
+        helper.createChannels()
+        val intent = Intent().apply {
+            putExtra(AlarmPayload.EXTRA_KEY, "auto-dismiss-reminder")
+            putExtra(AlarmPayload.EXTRA_TITLE, "Later event")
+            putExtra(AlarmPayload.EXTRA_EVENT_START, 123_456L)
+            putExtra(AlarmPayload.EXTRA_DELIVERY, AlarmDelivery.SILENT_REMINDER.name)
+            putExtra(AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_ENABLED, true)
+            putExtra(AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_MINUTES, 15)
+        }
+
+        helper.showAlarm(intent)
+
+        val manager = application.getSystemService(NotificationManager::class.java)
+        val notification = shadowOf(manager).allNotifications.single()
+        assertEquals(15 * 60_000L, notification.timeoutAfter)
+    }
 }

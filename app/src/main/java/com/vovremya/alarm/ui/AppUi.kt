@@ -35,6 +35,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
@@ -258,6 +259,8 @@ fun MainApp(
     onPickAlarmSound: () -> Unit,
     onSnoozeMinutes: (Int) -> Unit,
     onAutoSilenceMinutes: (Int) -> Unit,
+    onReminderAutoDismissEnabled: (Boolean) -> Unit,
+    onReminderAutoDismissMinutes: (Int) -> Unit,
     onToggleDay: (DayOfWeek) -> Unit,
     onToggleCalendar: (Long) -> Unit,
     onSelectAllCalendars: () -> Unit,
@@ -270,6 +273,7 @@ fun MainApp(
     onBottomBarHideSeconds: (Int) -> Unit,
     onReduceAnimations: (Boolean) -> Unit,
     onToggleImportantEvent: (String) -> Unit,
+    onToggleImportantCalendar: (Long) -> Unit,
     onShowImportantTab: (Boolean) -> Unit,
     onIncludeUnselectedCalendars: (Boolean) -> Unit,
     onShowAllEventsTab: (Boolean) -> Unit,
@@ -279,6 +283,7 @@ fun MainApp(
     onSwipeDirection: (SwipeDirection) -> Unit,
     onLeftSwipeAction: (SwipeAction) -> Unit,
     onRightSwipeAction: (SwipeAction) -> Unit,
+    onSwipePreviewEnabled: (Boolean) -> Unit,
     onLauncherIcon: (LauncherIcon) -> Unit,
     onSaveEventRule: (ScheduledAlarm, EventRuleScope, Int, AlarmDelivery, Boolean, Boolean, SignalEffects) -> Unit,
     onRemoveEventRule: (ScheduledAlarm, EventRuleScope) -> Unit,
@@ -414,6 +419,8 @@ fun MainApp(
                     onPickAlarmSound = onPickAlarmSound,
                     onSnoozeMinutes = onSnoozeMinutes,
                     onAutoSilenceMinutes = onAutoSilenceMinutes,
+                    onReminderAutoDismissEnabled = onReminderAutoDismissEnabled,
+                    onReminderAutoDismissMinutes = onReminderAutoDismissMinutes,
                     onToggleDay = onToggleDay,
                     onToggleCalendar = onToggleCalendar,
                     onSelectAllCalendars = onSelectAllCalendars,
@@ -426,6 +433,7 @@ fun MainApp(
                     onBottomBarHideSeconds = onBottomBarHideSeconds,
                     onReduceAnimations = onReduceAnimations,
                     onToggleImportantEvent = onToggleImportantEvent,
+                    onToggleImportantCalendar = onToggleImportantCalendar,
                     onShowImportantTab = onShowImportantTab,
                     onIncludeUnselectedCalendars = onIncludeUnselectedCalendars,
                     onShowAllEventsTab = onShowAllEventsTab,
@@ -435,6 +443,7 @@ fun MainApp(
                     onSwipeDirection = onSwipeDirection,
                     onLeftSwipeAction = onLeftSwipeAction,
                     onRightSwipeAction = onRightSwipeAction,
+                    onSwipePreviewEnabled = onSwipePreviewEnabled,
                     onLauncherIcon = onLauncherIcon,
                     onThemeMode = onThemeMode,
                     onAccentTheme = onAccentTheme,
@@ -1220,30 +1229,71 @@ private fun RevealableAlarmContainer(
     val scope = rememberCoroutineScope()
     val actionOffsetPx = with(density) { 270.dp.toPx() }
     val offset = remember(itemKey) { Animatable(0f) }
+    var revealSign by remember(itemKey) { mutableIntStateOf(-1) }
+    var pendingAction by remember(itemKey) { mutableStateOf<SwipeAction?>(null) }
+    var pendingSign by remember(itemKey) { mutableIntStateOf(0) }
     val animation = spring<Float>(dampingRatio = .84f, stiffness = 420f)
     val animationsEnabled = LocalAnimationsEnabled.current
-    LaunchedEffect(revealed, actionOffsetPx, animationsEnabled) {
+    LaunchedEffect(revealed, revealSign, actionOffsetPx, animationsEnabled) {
+        if (pendingAction != null) return@LaunchedEffect
+        val target = if (revealed) revealSign * actionOffsetPx else 0f
         if (animationsEnabled) {
-            offset.animateTo(if (revealed) -actionOffsetPx else 0f, animation)
+            offset.animateTo(target, animation)
         } else {
-            offset.snapTo(if (revealed) -actionOffsetPx else 0f)
+            offset.snapTo(target)
         }
     }
     BoxWithConstraints(modifier = modifier.fillMaxWidth().clip(shape)) {
         val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(actionOffsetPx)
         val allowLeft = settings.swipeDirection != SwipeDirection.RIGHT
         val allowRight = settings.swipeDirection != SwipeDirection.LEFT
+        fun runAction(action: SwipeAction, sign: Int) {
+            when (action) {
+                SwipeAction.REVEAL -> {
+                    pendingAction = null
+                    pendingSign = 0
+                    revealSign = sign
+                    onRevealedChange(true)
+                    scope.launch {
+                        if (animationsEnabled) offset.animateTo(sign * actionOffsetPx, animation)
+                        else offset.snapTo(sign * actionOffsetPx)
+                    }
+                }
+                SwipeAction.SILENT -> {
+                    if (!cancelled) onMute()
+                    pendingAction = null
+                    pendingSign = 0
+                    onRevealedChange(false)
+                    scope.launch { offset.snapTo(0f) }
+                }
+                SwipeAction.SKIP -> {
+                    if (cancelled) onRestore() else onSkip()
+                    pendingAction = null
+                    pendingSign = 0
+                    onRevealedChange(false)
+                    scope.launch { offset.snapTo(0f) }
+                }
+            }
+        }
         val dragState = rememberDraggableState { delta ->
             scope.launch {
                 val minimum = if (allowLeft) -widthPx else 0f
-                val maximum = if (allowRight && settings.fullSwipeEnabled) widthPx else 0f
+                val maximum = if (allowRight) widthPx else 0f
                 offset.snapTo((offset.value + delta).coerceIn(minimum, maximum))
             }
+        }
+        val visualSign = when {
+            offset.value > with(density) { 8.dp.toPx() } -> 1
+            offset.value < -with(density) { 8.dp.toPx() } -> -1
+            else -> revealSign
         }
         Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
             Row(
                 modifier = Modifier.matchParentSize().padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(
+                    6.dp,
+                    if (visualSign > 0) Alignment.Start else Alignment.End,
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (cancelled) {
@@ -1265,16 +1315,35 @@ private fun RevealableAlarmContainer(
                     onRevealedChange(false)
                 }
             }
-            if (settings.fullSwipeEnabled && offset.value > 0f) {
+            val previewAction = pendingAction
+            if (previewAction != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(if (pendingSign > 0) Alignment.CenterStart else Alignment.CenterEnd)
+                        .padding(horizontal = 22.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable { runAction(previewAction, pendingSign) },
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        SwipeActionHint(action = previewAction)
+                        Text(
+                            tr("Нажмите, чтобы подтвердить"),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            } else if (settings.fullSwipeEnabled && abs(offset.value) > actionOffsetPx * .14f) {
                 SwipeActionHint(
-                    action = settings.rightSwipeAction,
-                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 22.dp),
-                )
-            }
-            if (settings.fullSwipeEnabled && offset.value < -actionOffsetPx) {
-                SwipeActionHint(
-                    action = settings.leftSwipeAction,
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 22.dp),
+                    action = if (offset.value > 0f) settings.rightSwipeAction else settings.leftSwipeAction,
+                    modifier = Modifier
+                        .align(if (offset.value > 0f) Alignment.CenterStart else Alignment.CenterEnd)
+                        .padding(horizontal = 22.dp),
                 )
             }
         }
@@ -1287,32 +1356,61 @@ private fun RevealableAlarmContainer(
                     orientation = Orientation.Horizontal,
                     onDragStopped = {
                         scope.launch {
-                            val directionAllowed = if (offset.value < 0) allowLeft else allowRight
+                            val sign = if (offset.value < 0) -1 else 1
+                            val directionAllowed = if (sign < 0) allowLeft else allowRight
+                            val action = if (sign < 0) settings.leftSwipeAction else settings.rightSwipeAction
                             val fullSwipe = settings.fullSwipeEnabled && directionAllowed && abs(offset.value) >= widthPx * .62f
                             if (fullSwipe) {
-                                val action = if (offset.value < 0) settings.leftSwipeAction else settings.rightSwipeAction
-                                if (animationsEnabled) offset.animateTo(if (offset.value < 0) -widthPx else widthPx, tween(160))
-                                when (action) {
-                                    SwipeAction.REVEAL -> onRevealedChange(true)
-                                    SwipeAction.SILENT -> if (!cancelled) onMute()
-                                    SwipeAction.SKIP -> if (!cancelled) onSkip() else onRestore()
-                                }
-                                if (action == SwipeAction.REVEAL) {
-                                    offset.snapTo(-actionOffsetPx)
-                                } else {
-                                    offset.snapTo(0f)
+                                if (settings.swipePreviewEnabled && pendingAction == null) {
+                                    pendingAction = action
+                                    pendingSign = sign
+                                    revealSign = sign
                                     onRevealedChange(false)
+                                    val target = sign * widthPx * .72f
+                                    if (animationsEnabled) offset.animateTo(target, animation) else offset.snapTo(target)
+                                } else if (!settings.swipePreviewEnabled ||
+                                    (pendingAction == action && pendingSign == sign && abs(offset.value) >= widthPx * .86f)
+                                ) {
+                                    if (animationsEnabled) offset.animateTo(sign * widthPx, tween(160))
+                                    runAction(action, sign)
+                                } else {
+                                    val target = pendingSign * widthPx * .72f
+                                    if (animationsEnabled) offset.animateTo(target, animation) else offset.snapTo(target)
                                 }
                             } else {
-                                val shouldReveal = offset.value < -actionOffsetPx * .28f
+                                if (pendingAction != null) {
+                                    val target = pendingSign * widthPx * .72f
+                                    if (animationsEnabled) offset.animateTo(target, animation) else offset.snapTo(target)
+                                    return@launch
+                                }
+                                val shouldReveal = directionAllowed && abs(offset.value) > actionOffsetPx * .28f
+                                if (shouldReveal) revealSign = sign
                                 onRevealedChange(shouldReveal)
-                                if (animationsEnabled) offset.animateTo(if (shouldReveal) -actionOffsetPx else 0f, animation)
-                                else offset.snapTo(if (shouldReveal) -actionOffsetPx else 0f)
+                                val target = if (shouldReveal) sign * actionOffsetPx else 0f
+                                if (animationsEnabled) offset.animateTo(target, animation) else offset.snapTo(target)
                             }
                         }
                     },
                 )
-                .clickable { onRevealedChange(!revealed) },
+                .pointerInput(itemKey, revealed, pendingAction, allowLeft, allowRight) {
+                    detectTapGestures { position ->
+                        if (pendingAction != null || revealed) {
+                            pendingAction = null
+                            pendingSign = 0
+                            onRevealedChange(false)
+                            scope.launch {
+                                if (animationsEnabled) offset.animateTo(0f, animation) else offset.snapTo(0f)
+                            }
+                        } else {
+                            val sign = if (position.x < size.width / 2f) 1 else -1
+                            val allowed = if (sign > 0) allowRight else allowLeft
+                            if (allowed) {
+                                revealSign = sign
+                                onRevealedChange(true)
+                            }
+                        }
+                    }
+                },
         )
     }
 }
@@ -1545,6 +1643,8 @@ private fun SettingsScreen(
     onPickAlarmSound: () -> Unit,
     onSnoozeMinutes: (Int) -> Unit,
     onAutoSilenceMinutes: (Int) -> Unit,
+    onReminderAutoDismissEnabled: (Boolean) -> Unit,
+    onReminderAutoDismissMinutes: (Int) -> Unit,
     onToggleDay: (DayOfWeek) -> Unit,
     onToggleCalendar: (Long) -> Unit,
     onSelectAllCalendars: () -> Unit,
@@ -1557,6 +1657,7 @@ private fun SettingsScreen(
     onBottomBarHideSeconds: (Int) -> Unit,
     onReduceAnimations: (Boolean) -> Unit,
     onToggleImportantEvent: (String) -> Unit,
+    onToggleImportantCalendar: (Long) -> Unit,
     onShowImportantTab: (Boolean) -> Unit,
     onIncludeUnselectedCalendars: (Boolean) -> Unit,
     onShowAllEventsTab: (Boolean) -> Unit,
@@ -1566,6 +1667,7 @@ private fun SettingsScreen(
     onSwipeDirection: (SwipeDirection) -> Unit,
     onLeftSwipeAction: (SwipeAction) -> Unit,
     onRightSwipeAction: (SwipeAction) -> Unit,
+    onSwipePreviewEnabled: (Boolean) -> Unit,
     onLauncherIcon: (LauncherIcon) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAccentTheme: (AccentTheme) -> Unit,
@@ -1857,12 +1959,34 @@ private fun SettingsScreen(
                         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 460f),
                     ),
                 ) {
-                    ToggleRow(
-                        title = tr("Вибрация для остальных событий"),
-                        subtitle = tr("Только вибрация, без звука"),
-                        checked = state.settings.reminderVibrationEnabled,
-                        onChecked = onReminderVibrationEnabled,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ToggleRow(
+                            title = tr("Вибрация для остальных событий"),
+                            subtitle = tr("Только вибрация, без звука"),
+                            checked = state.settings.reminderVibrationEnabled,
+                            onChecked = onReminderVibrationEnabled,
+                        )
+                        ToggleRow(
+                            title = tr("Автоматически закрывать напоминания"),
+                            subtitle = if (state.settings.reminderAutoDismissEnabled) {
+                                tr("Закрывать экран и уведомление через %d мин", state.settings.reminderAutoDismissMinutes)
+                            } else {
+                                tr("Напоминание останется, пока вы его не закроете")
+                            },
+                            checked = state.settings.reminderAutoDismissEnabled,
+                            onChecked = onReminderAutoDismissEnabled,
+                        )
+                        MotionVisibility(visible = state.settings.reminderAutoDismissEnabled) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(tr("Через сколько закрывать"), fontWeight = FontWeight.Medium)
+                                MinuteChoiceChips(
+                                    state.settings.reminderAutoDismissMinutes,
+                                    listOf(1, 2, 5, 10, 15, 30, 60),
+                                    onReminderAutoDismissMinutes,
+                                )
+                            }
+                        }
+                    }
                 }
                 MotionVisibility(
                     visible = state.settings.advancedMode,
@@ -2070,7 +2194,10 @@ private fun SettingsScreen(
             SettingsCard(
                 Icons.Rounded.Star,
                 tr("Важные мероприятия"),
-                tr("Отмечено: %d", state.settings.importantEventTitles.size),
+                tr(
+                    "Отмечено: %d",
+                    state.settings.importantEventTitles.size + state.settings.importantCalendarIds.size,
+                ),
             ) {
                 ToggleRow(
                     title = tr("Показывать отдельную вкладку"),
@@ -2078,49 +2205,91 @@ private fun SettingsScreen(
                     checked = state.settings.showImportantTab,
                     onChecked = onShowImportantTab,
                 )
-                OutlinedTextField(
-                    value = importantTitle,
-                    onValueChange = { importantTitle = it },
-                    label = { Text(tr("Название мероприятия")) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                FilledTonalButton(
-                    onClick = {
-                        onToggleImportantEvent(importantTitle)
-                        importantTitle = ""
-                    },
-                    enabled = importantTitle.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
+                CompactSettingsSection(
+                    title = tr("По названию"),
+                    subtitle = tr("Выбрано названий: %d", state.settings.importantEventTitles.size),
                 ) {
-                    Icon(Icons.Rounded.StarBorder, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(tr("Добавить важное мероприятие"))
-                }
-                HorizontalDivider()
-                Text(tr("Найденные названия"), fontWeight = FontWeight.Medium)
-                if (knownEventTitles.isEmpty()) {
-                    Text(
-                        tr("После проверки календаря здесь появятся названия мероприятий"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    OutlinedTextField(
+                        value = importantTitle,
+                        onValueChange = { importantTitle = it },
+                        label = { Text(tr("Название мероприятия")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                } else {
-                    knownEventTitles.take(30).forEach { title ->
-                        val selected = state.settings.importantEventTitles.any {
-                            it.equals(title, ignoreCase = true)
+                    FilledTonalButton(
+                        onClick = {
+                            onToggleImportantEvent(importantTitle)
+                            importantTitle = ""
+                        },
+                        enabled = importantTitle.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.StarBorder, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Добавить важное мероприятие"))
+                    }
+                    HorizontalDivider()
+                    Text(tr("Найденные названия"), fontWeight = FontWeight.Medium)
+                    if (knownEventTitles.isEmpty()) {
+                        Text(
+                            tr("После проверки календаря здесь появятся названия мероприятий"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        knownEventTitles.take(30).forEach { title ->
+                            val selected = state.settings.importantEventTitles.any {
+                                it.equals(title, ignoreCase = true)
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { onToggleImportantEvent(title) }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = selected, onCheckedChange = { onToggleImportantEvent(title) })
+                                Spacer(Modifier.width(8.dp))
+                                Text(title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
                         }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable { onToggleImportantEvent(title) }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = selected, onCheckedChange = { onToggleImportantEvent(title) })
-                            Spacer(Modifier.width(8.dp))
-                            Text(title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                CompactSettingsSection(
+                    title = tr("Целые календари"),
+                    subtitle = tr("Выбрано календарей: %d", state.settings.importantCalendarIds.size),
+                ) {
+                    if (state.calendars.isEmpty()) {
+                        Text(
+                            tr("После проверки здесь появятся календари"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        state.calendars.forEach { calendar ->
+                            val selected = calendar.id in state.settings.importantCalendarIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { onToggleImportantCalendar(calendar.id) }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = selected, onCheckedChange = { onToggleImportantCalendar(calendar.id) })
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(calendar.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        calendar.accountName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -2205,16 +2374,21 @@ private fun SettingsScreen(
                             onChecked = onShowAllEventsTab,
                         )
                     }
-                    state.calendars.forEachIndexed { index, calendar ->
-                        CalendarToggle(
-                            calendar = calendar,
-                            checked = state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds,
-                            enabled = true,
-                            leadMinutes = state.settings.calendarLeadMinutes[calendar.id],
-                            onClick = { onToggleCalendar(calendar.id) },
-                            onConfigure = { calendarForLead = calendar },
-                        )
-                        if (index != state.calendars.lastIndex) HorizontalDivider(Modifier.padding(start = 42.dp))
+                    CompactSettingsSection(
+                        title = tr("Список календарей"),
+                        subtitle = tr("Календарей: %d", state.calendars.size),
+                    ) {
+                        state.calendars.forEachIndexed { index, calendar ->
+                            CalendarToggle(
+                                calendar = calendar,
+                                checked = state.settings.selectedCalendarIds.isEmpty() || calendar.id in state.settings.selectedCalendarIds,
+                                enabled = true,
+                                leadMinutes = state.settings.calendarLeadMinutes[calendar.id],
+                                onClick = { onToggleCalendar(calendar.id) },
+                                onConfigure = { calendarForLead = calendar },
+                            )
+                            if (index != state.calendars.lastIndex) HorizontalDivider(Modifier.padding(start = 42.dp))
+                        }
                     }
                 }
             }
@@ -2370,87 +2544,106 @@ private fun SettingsScreen(
                         onClick = onOpenLanguageSettings,
                     )
                 }
-                HorizontalDivider()
-                Text(tr("Правила событий"), fontWeight = FontWeight.SemiBold)
-                Text(
-                    tr("Как по умолчанию сохранять настройку, открытую из карточки события"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EventRuleScope.entries.forEach { scope ->
-                        FilterChip(
-                            selected = state.settings.defaultEventRuleScope == scope,
-                            onClick = { onDefaultEventRuleScope(scope) },
-                            label = { Text(eventRuleScopeName(scope)) },
-                        )
-                    }
-                }
-                HorizontalDivider()
-                ToggleRow(
-                    title = tr("Полное смахивание события"),
-                    subtitle = tr("Выполнять выбранное действие одним длинным свайпом"),
-                    checked = state.settings.fullSwipeEnabled,
-                    onChecked = onFullSwipeEnabled,
-                )
-                MotionVisibility(visible = state.settings.fullSwipeEnabled) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(tr("Разрешённые направления"), fontWeight = FontWeight.Medium)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SwipeDirection.entries.forEach { direction ->
-                                FilterChip(
-                                    selected = state.settings.swipeDirection == direction,
-                                    onClick = { onSwipeDirection(direction) },
-                                    label = { Text(swipeDirectionName(direction)) },
-                                )
-                            }
+                CompactSettingsSection(
+                    title = tr("Правила событий"),
+                    subtitle = tr("Настройки отдельных событий и календарей"),
+                ) {
+                    Text(
+                        tr("Как по умолчанию сохранять настройку, открытую из карточки события"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EventRuleScope.entries.forEach { scope ->
+                            FilterChip(
+                                selected = state.settings.defaultEventRuleScope == scope,
+                                onClick = { onDefaultEventRuleScope(scope) },
+                                label = { Text(eventRuleScopeName(scope)) },
+                            )
                         }
-                        Text(tr("Действие при свайпе влево"), fontWeight = FontWeight.Medium)
-                        SwipeActionChips(state.settings.leftSwipeAction, onLeftSwipeAction)
-                        Text(tr("Действие при свайпе вправо"), fontWeight = FontWeight.Medium)
-                        SwipeActionChips(state.settings.rightSwipeAction, onRightSwipeAction)
                     }
                 }
-                HorizontalDivider()
-                Text(tr("Иконка приложения"), fontWeight = FontWeight.SemiBold)
-                Text(
-                    tr("10 вариантов с разными формами и цветами; старая иконка выбрана по умолчанию"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LauncherIcon.entries.forEach { icon ->
-                        FilterChip(
-                            selected = state.settings.launcherIcon == icon,
-                            onClick = { onLauncherIcon(icon) },
-                            leadingIcon = {
-                                Box(Modifier.size(16.dp).background(launcherIconColor(icon), CircleShape))
-                            },
-                            label = { Text(launcherIconName(icon)) },
-                        )
+                CompactSettingsSection(
+                    title = tr("Жесты событий"),
+                    subtitle = tr("Свайп, направление и подтверждение"),
+                ) {
+                    ToggleRow(
+                        title = tr("Полное смахивание события"),
+                        subtitle = tr("Выполнять выбранное действие одним длинным свайпом"),
+                        checked = state.settings.fullSwipeEnabled,
+                        onChecked = onFullSwipeEnabled,
+                    )
+                    MotionVisibility(visible = state.settings.fullSwipeEnabled) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ToggleRow(
+                                title = tr("Фиксировать действие перед выполнением"),
+                                subtitle = tr("Показать результат и дождаться подтверждения касанием или вторым свайпом"),
+                                checked = state.settings.swipePreviewEnabled,
+                                onChecked = onSwipePreviewEnabled,
+                            )
+                            Text(tr("Разрешённые направления"), fontWeight = FontWeight.Medium)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SwipeDirection.entries.forEach { direction ->
+                                    FilterChip(
+                                        selected = state.settings.swipeDirection == direction,
+                                        onClick = { onSwipeDirection(direction) },
+                                        label = { Text(swipeDirectionName(direction)) },
+                                    )
+                                }
+                            }
+                            Text(tr("Действие при свайпе влево"), fontWeight = FontWeight.Medium)
+                            SwipeActionChips(state.settings.leftSwipeAction, onLeftSwipeAction)
+                            Text(tr("Действие при свайпе вправо"), fontWeight = FontWeight.Medium)
+                            SwipeActionChips(state.settings.rightSwipeAction, onRightSwipeAction)
+                        }
                     }
                 }
-                Text(
-                    tr("Android может обновить значок на рабочем столе через несколько секунд."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                )
-                HorizontalDivider()
-                Text(tr("Системные разрешения"), fontWeight = FontWeight.SemiBold)
-                Text(
-                    tr("Доступы Android для календаря, уведомлений и сигналов"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                PermissionRow(
-                    tr("Доступ и синхронизация календаря"),
-                    permissions.calendar && permissions.calendarWrite,
-                    onRequestCalendar,
-                )
-                PermissionRow(tr("Уведомления"), permissions.notifications, onRequestNotifications)
-                PermissionRow(tr("Точное время сигнала"), permissions.exactAlarms, onRequestExactAlarms)
-                PermissionRow(tr("Экран будильника"), permissions.fullScreen, onRequestFullScreen)
-                PermissionRow(tr("Фонарик"), permissions.camera, onRequestCamera)
+                CompactSettingsSection(
+                    title = tr("Иконка приложения"),
+                    subtitle = launcherIconName(state.settings.launcherIcon),
+                ) {
+                    Text(
+                        tr("10 вариантов с разными формами и цветами; старая иконка выбрана по умолчанию"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LauncherIcon.entries.forEach { icon ->
+                            FilterChip(
+                                selected = state.settings.launcherIcon == icon,
+                                onClick = { onLauncherIcon(icon) },
+                                leadingIcon = {
+                                    Box(Modifier.size(16.dp).background(launcherIconColor(icon), CircleShape))
+                                },
+                                label = { Text(launcherIconName(icon)) },
+                            )
+                        }
+                    }
+                    Text(
+                        tr("Android может обновить значок на рабочем столе через несколько секунд."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+                CompactSettingsSection(
+                    title = tr("Системные разрешения"),
+                    subtitle = tr("Календарь, уведомления и сигналы"),
+                ) {
+                    Text(
+                        tr("Доступы Android для календаря, уведомлений и сигналов"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    PermissionRow(
+                        tr("Доступ и синхронизация календаря"),
+                        permissions.calendar && permissions.calendarWrite,
+                        onRequestCalendar,
+                    )
+                    PermissionRow(tr("Уведомления"), permissions.notifications, onRequestNotifications)
+                    PermissionRow(tr("Точное время сигнала"), permissions.exactAlarms, onRequestExactAlarms)
+                    PermissionRow(tr("Экран будильника"), permissions.fullScreen, onRequestFullScreen)
+                    PermissionRow(tr("Фонарик"), permissions.camera, onRequestCamera)
+                }
                 HorizontalDivider()
                 Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(18.dp)) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
@@ -3066,6 +3259,50 @@ private fun SettingsCard(icon: ImageVector, title: String, subtitle: String, con
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     content()
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactSettingsSection(
+    title: String,
+    subtitle: String,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = if (LocalAnimationsEnabled.current) spring(dampingRatio = .84f, stiffness = 440f) else snap(),
+        label = "compactSettingsArrow",
+    )
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = tr(if (expanded) "Свернуть" else "Развернуть"),
+                    modifier = Modifier.rotate(arrowRotation),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            MotionVisibility(visible = expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
             }
         }
     }

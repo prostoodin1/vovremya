@@ -393,6 +393,29 @@ class EventSelectorTest {
     }
 
     @Test
+    fun `important calendar marks every event and copies reminder dismissal`() {
+        val now = time(2026, 7, 14, 10, 0)
+        val result = EventSelector.select(
+            listOf(
+                event(1, time(2026, 7, 15, 12, 0), calendarId = 42),
+                event(2, time(2026, 7, 15, 13, 0), calendarId = 10),
+            ),
+            AppSettings(
+                allEventsPerDay = true,
+                importantCalendarIds = setOf(42),
+                reminderAutoDismissEnabled = true,
+                reminderAutoDismissMinutes = 15,
+            ),
+            now,
+            zone,
+        )
+
+        assertEquals(listOf(true, false), result.alarms.map { it.isImportant })
+        assertEquals(listOf(true, true), result.alarms.map { it.reminderAutoDismissEnabled })
+        assertEquals(listOf(15, 15), result.alarms.map { it.reminderAutoDismissMinutes })
+    }
+
+    @Test
     fun `one event rule overrides calendar and global timing only for its instance`() {
         val now = time(2026, 7, 14, 10, 0)
         val firstStart = time(2026, 7, 15, 12, 0)

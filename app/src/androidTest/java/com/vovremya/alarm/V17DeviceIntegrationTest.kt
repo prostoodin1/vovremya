@@ -1,5 +1,6 @@
 package com.vovremya.alarm
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.ContentUris
 import android.content.ContentValues
@@ -7,6 +8,7 @@ import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
 import com.vovremya.alarm.data.CalendarRepository
 import com.vovremya.alarm.data.LauncherIcon
 import com.vovremya.alarm.launcher.LauncherIconManager
@@ -16,11 +18,18 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class V17DeviceIntegrationTest {
+    @get:Rule
+    val calendarPermissions: GrantPermissionRule = GrantPermissionRule.grant(
+        Manifest.permission.READ_CALENDAR,
+        Manifest.permission.WRITE_CALENDAR,
+    )
+
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
     @Test

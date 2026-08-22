@@ -168,9 +168,11 @@ object EventSelector {
                 soundUri = settings.alarmSoundUri,
                 snoozeMinutes = settings.snoozeMinutes,
                 autoSilenceMinutes = settings.autoSilenceMinutes,
+                reminderAutoDismissEnabled = settings.reminderAutoDismissEnabled,
+                reminderAutoDismissMinutes = settings.reminderAutoDismissMinutes,
                 isImportant = settings.importantEventTitles.any { title ->
                     title.trim().lowercase(Locale.ROOT) == event.title.trim().lowercase(Locale.ROOT)
-                },
+                } || event.calendarId in settings.importantCalendarIds,
                 fromUnselectedCalendar = selectedEvent.fromUnselectedCalendar,
                 customRuleApplied = rule != null || selectedEvent.calendarRuleApplied,
             )

@@ -22,4 +22,6 @@ object AlarmPayload {
     const val EXTRA_SOUND_URI = "alarm_sound_uri"
     const val EXTRA_SNOOZE_MINUTES = "alarm_snooze_minutes"
     const val EXTRA_AUTO_SILENCE_MINUTES = "alarm_auto_silence_minutes"
+    const val EXTRA_REMINDER_AUTO_DISMISS_ENABLED = "reminder_auto_dismiss_enabled"
+    const val EXTRA_REMINDER_AUTO_DISMISS_MINUTES = "reminder_auto_dismiss_minutes"
 }

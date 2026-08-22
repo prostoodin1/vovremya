@@ -80,7 +80,11 @@ class SettingsStoreTest {
         store.setSwipeDirection(SwipeDirection.LEFT)
         store.setLeftSwipeAction(SwipeAction.SKIP)
         store.setRightSwipeAction(SwipeAction.SILENT)
+        store.setSwipePreviewEnabled(true)
         store.setLauncherIcon(LauncherIcon.HOURGLASS)
+        store.setImportantCalendarIds(setOf(99L, 101L))
+        store.setReminderAutoDismissEnabled(true)
+        store.setReminderAutoDismissMinutes(15)
 
         val settings = store.settings.first()
         assertEquals(listOf(rule), settings.eventAlarmRules)
@@ -90,7 +94,11 @@ class SettingsStoreTest {
         assertEquals(SwipeDirection.LEFT, settings.swipeDirection)
         assertEquals(SwipeAction.SKIP, settings.leftSwipeAction)
         assertEquals(SwipeAction.SILENT, settings.rightSwipeAction)
+        assertTrue(settings.swipePreviewEnabled)
         assertEquals(LauncherIcon.HOURGLASS, settings.launcherIcon)
+        assertEquals(setOf(99L, 101L), settings.importantCalendarIds)
+        assertTrue(settings.reminderAutoDismissEnabled)
+        assertEquals(15, settings.reminderAutoDismissMinutes)
 
         store.setCalendarLeadMinutes(99, null)
         store.removeEventAlarmRule(rule.scope, rule.match)

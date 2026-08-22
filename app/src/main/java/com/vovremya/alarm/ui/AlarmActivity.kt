@@ -86,6 +86,7 @@ class AlarmActivity : ComponentActivity() {
     private var torchBlinkMillis = 500L
     private val signalHandler = Handler(Looper.getMainLooper())
     private val autoSilence = Runnable { stopSignal() }
+    private var reminderAutoDismiss: Runnable? = null
     private val torchPulse = object : Runnable {
         override fun run() {
             if (torchTogglesRemaining <= 0) {
@@ -150,6 +151,19 @@ class AlarmActivity : ComponentActivity() {
         val snoozeMinutes = intent.getIntExtra(AlarmPayload.EXTRA_SNOOZE_MINUTES, 10).coerceIn(1, 120)
         val autoSilenceMinutes = intent.getIntExtra(AlarmPayload.EXTRA_AUTO_SILENCE_MINUTES, 10).coerceIn(1, 60)
         startSignal(soundEnabled, vibrationEnabled, soundUri, autoSilenceMinutes, effects)
+        val reminderAutoDismissEnabled = intent.getBooleanExtra(
+            AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_ENABLED,
+            false,
+        )
+        val reminderAutoDismissMinutes = intent.getIntExtra(
+            AlarmPayload.EXTRA_REMINDER_AUTO_DISMISS_MINUTES,
+            5,
+        ).coerceIn(1, 60)
+        if (isReminder && reminderAutoDismissEnabled) {
+            reminderAutoDismiss = Runnable { stopAndClose(key) }.also { action ->
+                signalHandler.postDelayed(action, reminderAutoDismissMinutes * 60_000L)
+            }
+        }
         setContent {
             val settings by (application as VovremyaApplication).container.settingsStore.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
@@ -193,6 +207,8 @@ class AlarmActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        reminderAutoDismiss?.let(signalHandler::removeCallbacks)
+        reminderAutoDismiss = null
         stopSignal()
         super.onDestroy()
     }
@@ -289,6 +305,8 @@ class AlarmActivity : ComponentActivity() {
     }
 
     private fun stopAndClose(key: String) {
+        reminderAutoDismiss?.let(signalHandler::removeCallbacks)
+        reminderAutoDismiss = null
         stopSignal()
         (application as VovremyaApplication).container.notificationHelper.cancelAlarm(key)
         finishAndRemoveTask()
