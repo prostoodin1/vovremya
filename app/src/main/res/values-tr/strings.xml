@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zamanında</string>
+    <string name="alarm_channel">Alarmlar</string>
+    <string name="sync_channel">Planlama</string>
+    <string name="update_channel">Güncellemeler</string>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">オンタイム</string>
+    <string name="alarm_channel">アラーム</string>
+    <string name="sync_channel">スケジュール</string>
+    <string name="update_channel">アップデート</string>
+</resources>

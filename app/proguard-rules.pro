@@ -1,0 +1,2 @@
+-keep class androidx.work.** { *; }
+-dontwarn org.jetbrains.annotations.**

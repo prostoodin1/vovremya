@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">À l’heure</string>
+    <string name="alarm_channel">Alarmes</string>
+    <string name="sync_channel">Planification</string>
+    <string name="update_channel">Mises à jour</string>
+</resources>

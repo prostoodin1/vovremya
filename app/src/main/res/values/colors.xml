@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#F6F4FF</color>
+    <color name="launcher_background">#6558D3</color>
+    <color name="alarm_background">#17142C</color>
+    <color name="white">#FFFFFF</color>
+    <color name="icon_classic_background">#6558D3</color>
+    <color name="icon_orbit_background">#5143C7</color>
+    <color name="icon_check_background">#177D6B</color>
+    <color name="icon_bell_background">#E06A35</color>
+    <color name="icon_calendar_background">#3478D4</color>
+    <color name="icon_sunrise_background">#D94E73</color>
+    <color name="icon_star_background">#7250B5</color>
+    <color name="icon_minimal_background">#20242C</color>
+    <color name="icon_ring_background">#008E9B</color>
+    <color name="icon_hourglass_background">#A76A19</color>
+</resources>

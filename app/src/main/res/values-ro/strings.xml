@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">La Timp</string>
+    <string name="alarm_channel">Alarme</string>
+    <string name="sync_channel">Planificare</string>
+    <string name="update_channel">Actualizări</string>
+</resources>

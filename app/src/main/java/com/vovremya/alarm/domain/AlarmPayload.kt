@@ -1,0 +1,27 @@
+package com.vovremya.alarm.domain
+
+object AlarmPayload {
+    const val EXTRA_KEY = "alarm_key"
+    const val EXTRA_TITLE = "alarm_title"
+    const val EXTRA_EVENT_START = "event_start"
+    const val EXTRA_ALARM_AT = "alarm_at"
+    const val EXTRA_LOCATION = "alarm_location"
+    const val EXTRA_ALL_DAY = "event_all_day"
+    const val EXTRA_DELIVERY = "alarm_delivery"
+    const val EXTRA_SOUND_ENABLED = "alarm_sound_enabled"
+    const val EXTRA_VIBRATION_ENABLED = "alarm_vibration_enabled"
+    const val EXTRA_VIBRATION_INTENSITY = "alarm_vibration_intensity"
+    const val EXTRA_HIGH_BRIGHTNESS = "alarm_high_brightness"
+    const val EXTRA_TORCH_ENABLED = "alarm_torch_enabled"
+    const val EXTRA_TORCH_MODE = "alarm_torch_mode"
+    const val EXTRA_TORCH_BLINK_MILLIS = "alarm_torch_blink_millis"
+    const val EXTRA_TORCH_REPEAT_COUNT = "alarm_torch_repeat_count"
+    const val EXTRA_QUICK_DISMISS_ENABLED = "alarm_quick_dismiss_enabled"
+    const val EXTRA_QUICK_DISMISS_AFTER_MINUTES = "alarm_quick_dismiss_after_minutes"
+    const val EXTRA_QUICK_DISMISS_MODE = "alarm_quick_dismiss_mode"
+    const val EXTRA_SOUND_URI = "alarm_sound_uri"
+    const val EXTRA_SNOOZE_MINUTES = "alarm_snooze_minutes"
+    const val EXTRA_AUTO_SILENCE_MINUTES = "alarm_auto_silence_minutes"
+    const val EXTRA_REMINDER_AUTO_DISMISS_ENABLED = "reminder_auto_dismiss_enabled"
+    const val EXTRA_REMINDER_AUTO_DISMISS_MINUTES = "reminder_auto_dismiss_minutes"
+}
